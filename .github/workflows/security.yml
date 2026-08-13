@@ -1,0 +1,482 @@
+name: Security checks
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # OPT-01.1 §7: the COMPLETE verification chain runs in CI as one required
+  # job — typecheck, security, RLS static, POS, WP-01–04R, OPT-01/01.1
+  # contract, migration-manifest integrity, safe-URL, allow-list, content and
+  # the bundle/no-secrets build. Combined with the two PostgreSQL jobs below
+  # (migration-baseline + rls-matrix), these are the three gates the spec
+  # requires. The audit-response work added two more required PostgreSQL jobs
+  # — view-write-authority (the P0-1 closure proof) and inc11-database-suites
+  # — because a suite no gate calls is a suite that can rot unnoticed.
+  # Configure ALL of them as required branch-protection checks (a manual
+  # GitHub repo setting — it cannot be enforced from this file).
+  full-verify:
+    name: Full verify (npm run verify)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install
+        run: npm ci
+      - name: Run the complete verification suite
+        run: npm run verify
+      # The client wire contract executes the real production TypeScript
+      # against a recording fetch stub and asserts the RPC argument names
+      # against the migration's own signature. Needs no database, so it runs
+      # in this job rather than a PostgreSQL one.
+      - name: Client wire contract (browser-to-PostgREST)
+        run: npm run test:client-wire
+
+  # One exact supported Node release is used by local shells, CI and Netlify.
+  # A single locked runtime reduces build drift; dependency upgrades are tested separately.
+  locked-toolchain-build:
+    name: Locked toolchain (npm ci + build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install the exact locked dependency tree
+        run: npm ci
+      - name: Build from a clean tree
+        run: npm run build
+
+  edge-functions-deno:
+    name: Edge Functions (Deno-native type check)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - name: Check every Edge Function and shared module with the runtime-native toolchain
+        run: npm run test:deno
+
+  secret-scan:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # full history so leaked-then-deleted secrets are still caught
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  dependency-audit:
+    name: Dependency vulnerability audit (npm audit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      # SECURITY_BLOCKERS.md §8: fail CI on high/critical advisories.
+      #
+      # R4.5.1 correction. The gate previously audited the WHOLE tree at
+      # --audit-level=high, which meant it failed on the five advisories
+      # docs/archive/D-01-DISPOSITION-R4.3.md historically documented as DEFERRED (eslint@9 → minimatch@3 →
+      # brace-expansion@1; the only available fix is the eslint@10 major,
+      # scheduled with plan C). A permanently red required check is not a
+      # gate — it trains everyone to ignore it. The gate is therefore split:
+      #
+      #   1. PRODUCTION dependency tree — strict, blocking, no exceptions.
+      #      This is the tree that ships in dist/. It must stay at zero.
+      #   2. FULL tree including devDependencies — reported on every run and
+      #      non-blocking, so the deferred toolchain advisories stay VISIBLE
+      #      rather than silenced by an allow-list. When eslint@10 lands, the
+      #      `|| true` comes off and this becomes blocking again.
+      - name: npm audit — production dependencies (blocking, high+)
+        run: npm audit --omit=dev --audit-level=high
+      - name: npm audit — full tree incl. devDependencies (reported, deferral visible)
+        run: npm audit --audit-level=high || true
+
+  security-regression:
+    name: Security regression tests (source)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install the exact locked dependency tree
+        run: npm ci
+      - name: Run regression suite
+        run: npm run test:security
+      - name: Runtime insert-allowlist test
+        run: npm run test:allowlist
+
+  # OPT-02-C1.2: prove Supabase is the single production source of truth for the
+  # static SEO snapshot and that the pipeline FAILS CLOSED (no seed fallback in
+  # production). The suites drive the real loader + generator over a PostgREST
+  # fixture, so the production code path is exercised without a live project or
+  # any secret. Also covered inside `npm run verify`; kept as a standalone job
+  # for signal. Mark as a required branch-protection check.
+  seo-source-unification:
+    name: SEO source unification (Supabase-sourced, fail-closed)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install
+        run: npm ci
+      - name: Run the SEO unification suites (loader, prerender, rebuild, publishers)
+        run: npm run test:seo
+
+  bundle-verify:
+    name: Build + prove no secrets in the production bundle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install
+        run: npm ci
+      - name: Build and scan dist/
+        run: npm run verify:bundle
+
+  # R4.10 INCREMENT 1: the public read contract is reconciled against the REAL
+  # schema. This is deliberately a DATABASE job and deliberately NOT part of
+  # `npm run verify` — the verify job above has no PostgreSQL service, and the
+  # whole point of this suite is that the database is the authority. Mark it as
+  # a required check: it is the gate that decides whether a production build can
+  # complete at all.
+  public-contract:
+    name: Public contract reconciliation (loader + fixture vs real schema)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      - name: Install dependencies
+        run: npm ci
+      # Builds a throwaway database from the authoritative manifest, then checks
+      # every requested column, every fixture field, the forbidden-column list,
+      # the anonymous grant ratchet, and an end-to-end production content load
+      # against a PostgREST facade whose columns come from that database.
+      - name: Reconcile the public contract against the real schema
+        run: sudo env "PATH=$PATH" npm run test:r410-contract
+
+  # OPT-01: the two database-proof suites already existed but ran only on a
+  # developer's machine — CI could stay green while the migration chain or the
+  # RLS matrix was broken. They are CI jobs now; mark BOTH as required checks
+  # in the branch-protection rules so a red run blocks merge.
+  migration-baseline:
+    name: Migration baseline (schema + full chain on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install PostgreSQL
+        run: bash scripts/install-postgresql-17.sh
+      # Named npm script (spec §7) — sources the authoritative migration
+      # manifest and applies schema + the whole chain on a throwaway cluster.
+      - name: Apply schema + every migration in manifest order, assert invariants
+        run: sudo env "PATH=$PATH" npm run test:baseline
+
+  # OPT-01.1 correction: the ledgered upgrade path is behaviourally proven on
+  # real PostgreSQL — zero-replay on a migrated DB, exactly-once for new
+  # migrations, checksum-tamper hard-fail, failed-migration rollback with no
+  # ledger entry, credential redaction, and the fail-closed --db-fresh guards.
+  upgrade-replay:
+    name: Upgrade replay (migration ledger semantics on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install PostgreSQL
+        run: bash scripts/install-postgresql-17.sh
+      - name: Drive launch.sh --db-fresh / --db-upgrade through the ledger scenarios
+        run: sudo env "PATH=$PATH" npm run test:upgrade-replay
+
+  pre-ledger-adopt:
+    name: Pre-ledger adoption (OPT-01.2 baseline adoption on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install PostgreSQL
+        run: bash scripts/install-postgresql-17.sh
+      - name: Drive launch.sh --db-adopt-ledger / --db-upgrade through Tests A–F
+        run: sudo env "PATH=$PATH" npm run test:adopt
+
+  rls-matrix:
+    name: RLS matrix (80 policy/RPC assertions incl. AAL boundary, on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install and start PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      # The suite drives psql as the postgres OS user (`su postgres`), so it
+      # runs under sudo with the runner's node on PATH. Named npm script (spec §7).
+      - name: Run the local RLS matrix
+        run: sudo env "PATH=$PATH" npm run test:rls-local
+
+  # AUDIT FOLLOW-UP: the dedicated view write-authority suite was reachable
+  # only by hand — `npm run verify` excludes database suites by design, and
+  # the release command did not call it either, so the official gates could
+  # all pass while this suite was broken or never executed. The RLS matrix
+  # carries several of the same protections but NOT the pre-fix positive
+  # control, the historical 84->87 upgrade replay, the deliberate privilege
+  # re-grant, the production-baseline behaviour test or the four-caller
+  # matrix. This is its own required job so a failure names it directly.
+  # Mark it as a required branch-protection check alongside the others.
+  view-write-authority:
+    name: View write-authority (P0-1 closure proof, on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install and start PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      - name: Install
+        run: npm ci
+      # Builds three databases: the full chain, a truncated pre-fix chain that
+      # must still be exploitable, and one from the canonical baseline.
+      - name: Prove the public-view write-authority finding stays closed
+        run: sudo env "PATH=$PATH" npm run test:inc11-view-authority
+
+  smallbiz-closure:
+    name: Small-business closure regressions (P0-1..P0-11 + P1, incl. real-PG parity)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install and start PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      - name: Install
+        run: npm ci
+      # One check block per production-closure requirement (14 sections):
+      # behavioural for the shared pay rule, the public-projection rules and
+      # the P0-11 legal/contact parity (a fresh database from the full
+      # manifest, incl. the live per-field launch-fact flip); source-contract
+      # pins for the React-effect mechanisms. Mark required in branch
+      # protection alongside view-write-authority and revision-bootstrap.
+      - name: Prove the production-closure corrections stay closed
+        run: sudo env "PATH=$PATH" npm run test:smallbiz
+      # The §12 second-store simulation: two real stores, employees and shifts
+      # at each, manager scope enforced by RLS (not by the form), the first
+      # store unaffected, and no 's1' fallback anywhere.
+      - name: Second-store simulation on real PostgreSQL
+        run: sudo env "PATH=$PATH" npm run test:closure-second-store
+      # Executes the REAL hydration/error code against scripted responses.
+      - name: Hydration behaviour (P0-4 / P0-6 / P1-2)
+        run: npm run test:closure-hydration
+      # T13: anonymous view shapes, scope signature, Careers/Store selection
+      # lifecycles, the annual-salary model and the synchronous click lock —
+      # executed, not regex-matched.
+      - name: T13 runtime behaviour
+        run: npm run test:t13
+
+  revision-bootstrap:
+    name: Collection revision bootstrap (P0-3 closure proof, on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install and start PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      - name: Install
+        run: npm ci
+      # Builds three databases: the fresh chain, an install from the canonical
+      # baseline, and a genuinely constructed pre-guard historical database
+      # whose first-save deadlock must reproduce before chain 89 and vanish
+      # after it. Mark this job required in branch protection alongside
+      # view-write-authority.
+      - name: Prove the collection-revision bootstrap finding stays closed
+        run: sudo env "PATH=$PATH" npm run test:inc11-revisions
+
+  release-provenance:
+    name: Release provenance sealing (P0-4 closure proof)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install
+        run: npm ci
+      - name: Build (the suite verifies dist provenance too)
+        run: npm run build
+      # Builds a genuine release set and exercises the complete provenance
+      # attack suite: source/build/evidence tampering, migration/receipt drift,
+      # hostile archives, trust-anchor/signature attacks, production binding
+      # and exact Edge Function inventory identity. The fixture starts with a
+      # STUB only for development self-consistency; the protected production
+      # release-seal path replaces it with the pinned Ed25519 signature.
+      - name: Prove the release-provenance finding stays closed
+        run: npm run test:provenance
+
+  # The remaining INC11 database suites, likewise unreachable from any gate
+  # until now: notice evidence, publication boundary, studio atomicity and the
+  # content/candidacy lifecycle.
+  inc11-database-suites:
+    name: INC11 database suites (boundary, notices, studio, lifecycle)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install and start PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      - name: Install
+        run: npm ci
+      - name: Publication boundary
+        run: sudo env "PATH=$PATH" npm run test:inc11-boundary
+      - name: Notice evidence
+        run: sudo env "PATH=$PATH" npm run test:inc11-notices
+      - name: Studio atomicity
+        run: sudo env "PATH=$PATH" npm run test:inc11-studio
+      - name: Content and candidacy lifecycle
+        run: sudo env "PATH=$PATH" npm run test:inc11-lifecycle
+
+  # False-data remediation: the routing / click / deployment audits were
+  # rewritten around the clean empty-state launch (no fabricated store or
+  # vacancy pages). They run headless Chromium against the prerendered build so
+  # the empty-state contract is a required check, not a manual step. Mark this
+  # job as a required branch-protection check alongside the others.
+  browser-tests:
+    name: Browser E2E (routing + click + deployment audits on the prerendered build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: ./node_modules/.bin/playwright install --with-deps chromium firefox webkit
+      - name: Build the site (prerenders SEO pages)
+        run: npm run build
+      - name: Run the complete browser suite against the built site
+        env:
+          MP_BROWSER_SKIP_BUILD: "1"
+        run: npm run test:browser:run
+
+  database-durability:
+    name: Database durability (backup/restore + repeated concurrency)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install PostgreSQL
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+      - name: Prove backup restoration and repeat the concurrency suite five times
+        run: sudo env "PATH=$PATH" npm run test:database-durability
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: database-durability-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: ignore
+
+  # R4.5.1 WS9: the retention invariant's EXECUTABLE proof. This suite passing
+  # against the deployed chain is what the RETENTION_INVARIANT_TESTS_PASSED=true
+  # marker attests (env validator rule R8) — MEDIA_CLEANUP_ENABLED must stay
+  # unset until it has. Mark as a required branch-protection check.
+  retention-invariant:
+    name: WS9 retention invariant (claim-time CV re-check, on real PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - name: Install PostgreSQL
+        run: bash scripts/install-postgresql-17.sh
+      - name: Prove the retention sweeps and the claim-time reference re-check
+        run: sudo env "PATH=$PATH" npm run test:retention

@@ -1,0 +1,436 @@
+{
+  "_comment": "C1.3 audit finding #8 — the ONE authoritative classification of every database table's launch scope. scripts/schema-scope.test.mjs fails if any table declared in schema.sql or a migration is absent here, so this cannot silently drift as the schema grows. See docs/SCHEMA-SCOPE.md.",
+  "scopes": {
+    "active": "Used by a launched feature (a browser surface, or a documented server/POS surface).",
+    "backend_only": "Written/read ONLY by trusted server code (Edge Functions / service role). No browser role reads it directly.",
+    "reserved": "Schema exists for a future / not-yet-demonstrated domain. Not wired to any launch surface; browser roles must not depend on it.",
+    "deprecated": "Superseded by another table; retained only for back-compat / migration."
+  },
+  "tables": {
+    "site_settings": {
+      "scope": "active",
+      "domain": "website",
+      "note": "Brand/company config; anon-readable public subset."
+    },
+    "site_content": {
+      "scope": "active",
+      "domain": "website",
+      "note": "Website Studio content + SEO/legal; anon-readable."
+    },
+    "cms_pages": {
+      "scope": "deprecated",
+      "domain": "website",
+      "note": "Legacy CMS; superseded by site_content. Still anon-readable for back-compat; migrated by Legacy Import."
+    },
+    "menu_items": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "Public menu; anon-readable."
+    },
+    "stores": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "Public store locator; anon-readable."
+    },
+    "deals": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "Deals & combos; anon-readable."
+    },
+    "tax_codes": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS6d controlled VAT classification registry (4 statutory codes). Authenticated read-only; service-maintained; anon revoked."
+    },
+    "job_vacancies": {
+      "scope": "active",
+      "domain": "careers",
+      "note": "Public vacancies; anon-readable."
+    },
+    "news_posts": {
+      "scope": "active",
+      "domain": "website",
+      "note": "Public news; anon-readable (published only surfaced)."
+    },
+    "kb_articles": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Staff knowledge base."
+    },
+    "media_assets": {
+      "scope": "active",
+      "domain": "website",
+      "note": "Media library rows; UPLOAD gated by VITE_MEDIA_V2."
+    },
+    "staff_profiles": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Staff directory + role/auth linkage."
+    },
+    "role_permissions": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Permissions matrix."
+    },
+    "work_shifts": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Rota & shifts."
+    },
+    "clock_history": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Timesheets / clock in-out."
+    },
+    "payslips": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Earnings estimates / payslips."
+    },
+    "staff_documents": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Staff documents."
+    },
+    "staff_document_tombstones": {
+      "scope": "backend_only",
+      "domain": "staff",
+      "note": "T13.3.19 immutable deletion evidence and reconciliation tombstones; service-role written and browser-dark."
+    },
+    "checklist_templates": {
+      "scope": "active",
+      "domain": "team",
+      "note": "Shift checklists."
+    },
+    "training_courses": {
+      "scope": "active",
+      "domain": "academy",
+      "note": "Academy courses."
+    },
+    "training_assessments": {
+      "scope": "active",
+      "domain": "academy",
+      "note": "Academy assessments/modules."
+    },
+    "training_assignments": {
+      "scope": "active",
+      "domain": "academy",
+      "note": "Course assignments."
+    },
+    "training_certificates": {
+      "scope": "active",
+      "domain": "academy",
+      "note": "Issued certificates."
+    },
+    "training_progress": {
+      "scope": "active",
+      "domain": "academy",
+      "note": "Per-employee progress."
+    },
+    "training_results": {
+      "scope": "active",
+      "domain": "academy",
+      "note": "Assessment results (server-graded)."
+    },
+    "sifr_reports": {
+      "scope": "active",
+      "domain": "team",
+      "note": "SIFR incident reports."
+    },
+    "contact_messages": {
+      "scope": "active",
+      "domain": "inbox",
+      "note": "Public contact form submissions (server-minted)."
+    },
+    "job_applications": {
+      "scope": "active",
+      "domain": "inbox",
+      "note": "Careers applications (server-minted)."
+    },
+    "franchise_inquiries": {
+      "scope": "active",
+      "domain": "inbox",
+      "note": "Franchise leads (server-minted)."
+    },
+    "orders": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WEB backup till orders (Web Till Orders screen)."
+    },
+    "order_items": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "Web till order lines."
+    },
+    "order_item_modifiers": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "Web till line modifiers."
+    },
+    "pos_orders": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "NATIVE tablet till orders (Native Till Ledger)."
+    },
+    "pos_order_items": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till order lines."
+    },
+    "pos_order_item_modifiers": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till line modifiers."
+    },
+    "pos_refunds": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till refunds."
+    },
+    "pos_refund_items": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till refund lines."
+    },
+    "pos_voids": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till voids."
+    },
+    "pos_corrections": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till corrections."
+    },
+    "pos_shifts": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till shifts / Z-reports."
+    },
+    "pos_cash_movements": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Cash drawer movements."
+    },
+    "pos_approvals": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Supervisor approvals."
+    },
+    "pos_audit_events": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till audit events."
+    },
+    "pos_events": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Native till sync events / outbox envelopes."
+    },
+    "pos_devices": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Paired till devices."
+    },
+    "pos_pairing_codes": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Device pairing codes."
+    },
+    "pos_pair_attempts": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Pairing rate-limit ledger."
+    },
+    "pos_catalog": {
+      "scope": "active",
+      "domain": "native_till",
+      "note": "Reverse catalogue sync to the till (pos-catalog function)."
+    },
+    "app_state": {
+      "scope": "backend_only",
+      "domain": "platform",
+      "note": "Generic server-held app persistence; not a browser surface."
+    },
+    "audit_logs": {
+      "scope": "active",
+      "domain": "system",
+      "note": "Admin Audit Trail view (owner-only reads)."
+    },
+    "activity_log": {
+      "scope": "backend_only",
+      "domain": "system",
+      "note": "Append-only privileged-action audit; written only via service role."
+    },
+    "email_log": {
+      "scope": "backend_only",
+      "domain": "system",
+      "note": "Transactional e-mail log (send-email function)."
+    },
+    "form_submission_log": {
+      "scope": "backend_only",
+      "domain": "system",
+      "note": "Public-form idempotency/rate ledger (server)."
+    },
+    "cv_upload_ip_log": {
+      "scope": "backend_only",
+      "domain": "system",
+      "note": "CV upload per-IP rate ledger (server)."
+    },
+    "anonymous_rate_buckets": {
+      "scope": "backend_only",
+      "domain": "system",
+      "note": "T13.3.19 bounded atomic rate counters for anonymous and sensitive operations; server-only with scheduled retention."
+    },
+    "media_objects": {
+      "scope": "backend_only",
+      "domain": "media",
+      "note": "WP-04R media pipeline object records (server)."
+    },
+    "media_references": {
+      "scope": "backend_only",
+      "domain": "media",
+      "note": "WP-04R media reference counting (server)."
+    },
+    "storage_cleanup_jobs": {
+      "scope": "backend_only",
+      "domain": "media",
+      "note": "Confirmed-delete job queue (media + CV objects). WS9: claim re-checks job_applications.cv_path — a referenced CV closes as status=reconciled, never deleted."
+    },
+    "retention_runs": {
+      "scope": "backend_only",
+      "domain": "media",
+      "note": "WS9 retention log: one row per sweep per entity (cutoff, rows deleted, jobs enqueued). Written only by the SECURITY DEFINER retention functions; RLS on, zero policies, API-role grants revoked."
+    },
+    "customers": {
+      "scope": "reserved",
+      "domain": "crm",
+      "note": "Future customer/CRM domain — not wired to any launch surface."
+    },
+    "loyalty_transactions": {
+      "scope": "reserved",
+      "domain": "crm",
+      "note": "Future loyalty domain — not wired to any launch surface."
+    },
+    "ingredients": {
+      "scope": "reserved",
+      "domain": "inventory",
+      "note": "Future inventory domain — not wired to any launch surface."
+    },
+    "stock_movements": {
+      "scope": "reserved",
+      "domain": "inventory",
+      "note": "Future inventory domain — not wired to any launch surface."
+    },
+    "order_quotes": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7 immutable priced snapshot: the proposed transaction before any money moves. Finalisation copies from it and never reprices. RPC-written; authenticated read is store-scoped."
+    },
+    "quote_payment_attempts": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7 payment-attempt ledger: one immutable-identity row per attempt, resolving once to DECLINED, ABANDONED or CONSUMED. Reservation ids are never recycled."
+    },
+    "web_till_sessions": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7 cash custody anchor for the browser till (open/closed drawer, opening float). No editable balance is stored; expected cash derives from financial events."
+    },
+    "web_till_devices": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7 registered browser-till installations, so a cash sale names the physical till that took the money."
+    },
+    "payment_terminals": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7 registered card terminals. Finalisation DERIVES the provider/merchant/terminal namespace from here; the client never supplies it."
+    },
+    "online_payment_accounts": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7b registered online (card-not-present) provider accounts. Finalisation DERIVES the online namespace from here; the client never supplies it. Admin-registered."
+    },
+    "payment_reconciliations": {
+      "scope": "active",
+      "domain": "web_till",
+      "note": "WS7b append-only settlement evidence matching an operator-recorded card/online payment against an independent settlement source; the only path to PROVIDER_RECONCILED."
+    },
+    "staff_compliance_records": {
+      "scope": "active",
+      "domain": "staff",
+      "note": "R4.8 A1: authoritative compliance records; staff widget derives every label here."
+    },
+    "admin_recovery_intents": {
+      "scope": "backend_only",
+      "domain": "staff",
+      "note": "R4.8 H2/H3: audited owner intents consumed by the employee-access-revoke function."
+    },
+    "launch_settings": {
+      "scope": "active",
+      "domain": "website",
+      "note": "R4.8 F1: owner-managed mandatory launch facts; nothing seeded/invented."
+    },
+    "privacy_notice_versions": {
+      "scope": "active",
+      "domain": "website",
+      "note": "R4.8 F4: versioned point-of-collection notices; submissions stamp the version."
+    },
+    "notification_outbox": {
+      "scope": "active",
+      "domain": "website",
+      "note": "R4.8 C1: durable notification jobs; owner-readable, server-written only."
+    },
+    "allergen_catalogue": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "R4.8 G1: 14 regulated categories as fixed reference codes."
+    },
+    "ingredient_specifications": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "R4.8 G2: supplier spec revisions; owner-recorded evidence, never seeded."
+    },
+    "menu_item_recipes": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "R4.8 G3: versioned BOM per sellable item."
+    },
+    "product_allergen_declarations": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "R4.8 G3/G5: the only allergen truth customer surfaces may render; approval-gated."
+    },
+    "ops_heartbeats": {
+      "scope": "backend_only",
+      "domain": "ops",
+      "note": "R4.8 M: scheduled-job liveness; absence renders unknown, never green."
+    },
+    "ops_alert_state": {
+      "scope": "backend_only",
+      "domain": "ops",
+      "note": "T13.3.7: deduplicated owner alert state for worker failure, staleness and recovery."
+    },
+    "payroll_export_batches": {
+      "scope": "active",
+      "domain": "staff",
+      "note": "R4.8 O: approved-hours export boundary to the external payroll provider."
+    },
+    "daily_closes": {
+      "scope": "active",
+      "domain": "shop",
+      "note": "R4.8 O: append-only daily reconciliation; corrections reference originals."
+    },
+    "collection_revisions": {
+      "scope": "active",
+      "domain": "website",
+      "note": "INC11: one monotonic revision per replaceable collection; authenticated read at hydration, written only by the SECURITY DEFINER bump trigger and the checkpoint helper. Closes same-count edit-edit loss in replace_collection."
+    },
+    "staff_notice_acknowledgements": {
+      "scope": "active",
+      "domain": "staff",
+      "note": "INC11: append-only record of which frozen staff-facing privacy notice each staff member acknowledged, and when. Self-insert via RLS; owner reads through the AAL2-aware helper; edits/deletes refused by trigger — acknowledgements are evidence."
+    }
+  }
+}

@@ -1,0 +1,26 @@
+/* r48-allergen.test.mjs — R4.8 Workstream G: controlled allergen truth. */
+import { readFileSync } from 'node:fs';
+let passed = 0, failed = 0;
+const ok = (n) => { passed++; console.log('✔', n); };
+const bad = (n, d) => { failed++; console.log('✘', n, d || ''); };
+const check = (n, c, d) => (c ? ok(n) : bad(n, d));
+const sql = readFileSync('supabase/migration_r48_allergens.sql', 'utf8');
+const pp = readFileSync('src/components/PublicPages.tsx', 'utf8');
+const CODES = ['celery','gluten_cereals','crustaceans','eggs','fish','lupin','milk','molluscs','mustard','peanuts','sesame','soya','sulphites','tree_nuts'];
+for (const c of CODES) check(`catalogue seeds regulated code "${c}"`, new RegExp(`\\('${c}',`).test(sql));
+check('exactly the 14 regulated categories are seeded', (sql.match(/^\s*\('[a-z_]+',\s+'/gm) || []).length === 14);
+check('no generic "Nuts" category (peanuts and tree nuts are distinct)', !/'nuts'/.test(sql) && /'peanuts'/.test(sql) && /'tree_nuts'/.test(sql));
+check('gluten cereals and tree nuts REQUIRE the specific detail', /\('gluten_cereals',[^)]*true/.test(sql) && /\('tree_nuts',[^)]*true/.test(sql));
+check('approval validates codes against the catalogue', /left join allergen_catalogue c on c\.code = e->>'code'/.test(sql));
+check('approval enforces mandatory detail', /requires_detail and coalesce\(trim\(e->>'detail'\),''\) = ''/.test(sql));
+check('declarations cannot be born approved (default draft)', /state\s+text not null default 'draft'/.test(sql));
+check('public read is restricted to APPROVED declarations', /pad_public_read_approved[\s\S]{0,200}state = 'approved'/.test(sql));
+check('publish gate blocks availability without an approved declaration', /menu_publish_blocked/.test(sql));
+check('recipe change supersedes the approval (change control)', /'recipe changed'/.test(sql));
+check('supplier spec change supersedes the approval', /'ingredient specification changed'/.test(sql));
+check('approval is audited', /'allergen\.declaration_approved'/.test(sql));
+check('no seeded product declaration rows (business facts never guessed)', !/insert into product_allergen_declarations/.test(sql));
+check('public menu: empty array is NOT presented as allergen-free', /information not yet verified for this item/.test(pp));
+check('public menu: legacy list is labelled guidance, verified info in store', /Allergen guidance:/.test(pp) && /ask before ordering/i.test(pp));
+console.log(`\nR48-ALLERGEN — ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

@@ -1,0 +1,34 @@
+/* r48-cors.test.ts — R4.8 Workstream E: production CORS fails closed.
+ * Runs the SHIPPED decision core (not a mirror) under tsx. */
+import { decideCors, corsHeadersFromDecision } from '../supabase/functions/_shared/cors.ts';
+let passed = 0, failed = 0;
+const ok = (n: string) => { passed++; console.log('✔', n); };
+const bad = (n: string, d = '') => { failed++; console.log('✘', n, d); };
+const check = (n: string, c: boolean, d = '') => (c ? ok(n) : bad(n, d));
+const PROD = { APP_ENV: 'production', FORM_ALLOWED_ORIGINS: 'https://milkpop.uk,https://www.milkpop.uk' };
+const PROD_EMPTY = { APP_ENV: 'production' };
+const DEV: Record<string, string> = {};
+const site = 'https://milkpop.uk';
+let d = decideCors(site, ['FORM_ALLOWED_ORIGINS'], PROD);
+check('prod: trusted origin echoed exactly', d.allowOrigin === site && d.trusted);
+d = decideCors('https://evil.example', ['FORM_ALLOWED_ORIGINS'], PROD);
+check('prod: untrusted origin gets null (never first-allowed pin)', d.allowOrigin === 'null' && !d.trusted);
+d = decideCors(null, ['FORM_ALLOWED_ORIGINS'], PROD);
+check('prod: missing Origin header gets null (non-browser clients unaffected by CORS)', d.allowOrigin === 'null');
+d = decideCors(site, ['FORM_ALLOWED_ORIGINS'], PROD_EMPTY);
+check('prod: NO allow-list ⇒ misconfigured, null, never *', d.allowOrigin === 'null' && d.misconfigured);
+check('prod: misconfiguration is observable in headers', corsHeadersFromDecision(d)['X-MP-Cors'] === 'misconfigured');
+d = decideCors('https://sub.milkpop.uk', ['FORM_ALLOWED_ORIGINS'], PROD);
+check('prod: exact-match only (no suffix/subdomain leniency)', d.allowOrigin === 'null');
+d = decideCors('https://staging.milkpop.uk', ['FORM_ALLOWED_ORIGINS'], { APP_ENV: 'production', FORM_ALLOWED_ORIGINS: 'https://staging.milkpop.uk' });
+check('prod: staging origin works when explicitly listed', d.allowOrigin === 'https://staging.milkpop.uk');
+d = decideCors(site, ['CV_ALLOWED_ORIGINS', 'FORM_ALLOWED_ORIGINS'], { APP_ENV: 'production', CV_ALLOWED_ORIGINS: site });
+check('prod: per-function env precedence honoured', d.allowOrigin === site);
+d = decideCors('https://anything.example', ['FORM_ALLOWED_ORIGINS'], DEV);
+check('dev: unconfigured stays permissive (*)', d.allowOrigin === '*');
+d = decideCors('https://evil.example', ['FORM_ALLOWED_ORIGINS'], { FORM_ALLOWED_ORIGINS: site });
+check('dev: configured list still enforced', d.allowOrigin === 'null');
+const h = corsHeadersFromDecision(decideCors(site, ['FORM_ALLOWED_ORIGINS'], PROD), 'GET, OPTIONS');
+check('OPTIONS/methods pass-through + Vary: Origin always set', h['Access-Control-Allow-Methods'] === 'GET, OPTIONS' && h['Vary'] === 'Origin');
+console.log(`\nR48-CORS — ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

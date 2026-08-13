@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+/** T13.3.27 — the protected verifier matches the intentionally deferred POS scope. */
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const read=(p)=>readFileSync(path.join(ROOT,p),'utf8');
+let passed=0,failed=0;
+const check=(name,condition)=>{ if(condition){passed++;console.log('PASS',name);}else{failed++;console.error('FAIL',name);} };
+const pkg=JSON.parse(read('package.json'));
+const env=read('.env.example');
+const verify=pkg.scripts?.verify||'';
+const publicLaunch=pkg.scripts?.['test:public-launch']||'';
+const pos=read('scripts/pos-contract.test.mjs');
+const boundary=read('scripts/r48-till-boundary.test.mjs');
+const features=read('src/lib/launchFeatures.ts');
+const admin=read('src/components/AdminPanel.tsx');
+const readme=read('README.md');
+check('current release has advanced beyond the T13.3.27 verifier closure', /^VITE_RELEASE_IDENTITY=r4\.10\.15-t13\.3\.30-final-production-closure$/m.test(env));
+check('T13.3.27 commissioning authority is archived', existsSync(path.join(ROOT,'docs/archive/commissioning/PRODUCTION-COMMISSIONING-T13.3.27.md')));
+check('current T13.3.30 commissioning authority exists', existsSync(path.join(ROOT,'PRODUCTION-COMMISSIONING-T13.3.30.md')));
+check('verify retains the POS contract', /npm run test:pos/.test(verify));
+check('verify retains the historical R4.8 boundary suite', /npm run test:r48/.test(verify));
+check('public launch executes the T13.3.27 closure gate', /t13327-verifier-closure\.test\.mjs/.test(publicLaunch));
+check('sales and till remain post-launch features', /sales:\s*\{[^}]*status:\s*'post_launch'/.test(features) && /till:\s*\{[^}]*status:\s*'post_launch'/.test(features));
+check('AdminPanel mounts neither deferred route', !/effectiveActiveTab === 'sales'/.test(admin) && !/effectiveActiveTab === 'till'/.test(admin) && !/<TillOrders\b/.test(admin));
+check('POS contract asserts retained-but-unrouted truth', /retained ledger is role-scoped but not routed/.test(pos) && /status:\\s\*'post_launch'/.test(pos));
+check('Till-boundary contract asserts current README truth', /retained for later integration/.test(boundary) && /no Till route is exposed/.test(boundary));
+check('README states the deferred public scope', /POS\/Web Till source is retained for later integration/.test(readme) && /no Till route appears in Staff or Admin navigation/.test(readme));
+console.log(`\nT13.3.27 VERIFIER CLOSURE — ${passed}/${passed+failed} passed`);
+process.exit(failed?1:0);

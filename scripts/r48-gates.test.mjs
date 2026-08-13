@@ -1,0 +1,27 @@
+/* r48-gates.test.mjs — R4.8 Workstream F: launch gates fail closed. */
+import { readFileSync } from 'node:fs';
+let passed = 0, failed = 0;
+const ok = (n) => { passed++; console.log('✔', n); };
+const bad = (n, d) => { failed++; console.log('✘', n, d || ''); };
+const check = (n, c, d) => (c ? ok(n) : bad(n, d));
+const gates = readFileSync('supabase/migration_r48_outbox_and_gates.sql', 'utf8');
+const alg = readFileSync('supabase/migration_r48_allergens.sql', 'utf8');
+check('launch_settings is a guarded singleton', /id\s+boolean primary key default true check \(id\)/.test(gates));
+check('nothing is seeded beyond the empty row', /insert into launch_settings \(id\) values \(true\) on conflict \(id\) do nothing/.test(gates) && !/insert into launch_settings \(id,\s*legal/.test(gates));
+check('launch_settings is owner-only (RLS both directions)', /launch_settings_owner_all[\s\S]{0,120}is_owner\(\)\) with check \(is_owner\(\)\)/.test(gates));
+check('store cannot TRANSITION to open with missing facts', /trg_store_open_gate/.test(gates) && /store_open_blocked/.test(gates));
+check('open gate checks identity, contacts, VAT, address, hours', ['legal_business_name','registered_address','public_contact_email','privacy_contact_email','vat_state_confirmed','store_address','opening_hours'].every((k) => gates.includes(`'${k}'`)));
+check('forms refuse when gates armed and prerequisites missing', /forms_not_commissioned/.test(gates));
+check('customer ack is opt-in, off by default', /customer_ack_enabled\s+boolean not null default false/.test(gates));
+check('marketing opt-in is separate and false by default', /marketing_opt_in boolean not null default false/.test(gates));
+check('acknowledgement model, not a consent checkbox, in the notice system', /Acknowledgement wording, not a consent checkbox/.test(gates));
+check('menu availability gate armed by enforce_public_gates', /assert_menu_publish_allowed/.test(alg) && /enforce_public_gates/.test(alg));
+check('readiness function exists owner-only with fix links', /launch_readiness/.test(alg) && /'fix','\/admin\/settings\/'/.test(alg));
+check('readiness reports not_applicable honestly (no green-for-absence)', /'not_applicable'/.test(alg));
+const panels = readFileSync('src/components/admin/ClosurePanels.tsx', 'utf8');
+check('readiness panel links each failed item to its fix location', /href=\{it\.fix\}/.test(panels));
+check('arming the gates is an explicit owner action with consequences stated', /Arm public launch gates/.test(panels) && /forms require a notification recipient and published privacy notice/.test(panels));
+const validator = readFileSync('scripts/validate-deployment-env.mjs', 'utf8');
+for (const r of ['R11', 'R12', 'R14']) check(`deploy validator rule ${r} present`, new RegExp(`fail\\('${r}'`).test(validator));
+console.log(`\nR48-GATES — ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

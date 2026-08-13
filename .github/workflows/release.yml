@@ -1,0 +1,550 @@
+# =============================================================================
+#  MILK POP — RELEASE (build once, sign, deploy that exact build, prove it)
+# =============================================================================
+#  The whole point: the artefact that gets signed is the artefact that gets
+#  deployed. There is ONE production build in this workflow and nothing rebuilds
+#  after signing. If you find yourself adding a second `npm run build`, stop —
+#  that is the bug this pipeline exists to prevent.
+#
+#  Protected production inputs are authoritative in
+#  PRODUCTION-ENV-AND-FUNCTION-INVENTORY.md and are validated before mutation.
+#  Do not use this workflow header as a substitute for that complete inventory.
+#
+#  Required repository variables (vars):
+#    MP_SITE_DOMAIN / MP_SUPABASE_PROJECT_REF
+#    TURNSTILE_SERVER_ENABLED / TURNSTILE_SECRET_SET
+#    VITE_TURNSTILE_SITE_KEY
+#    FORM_ALLOWED_ORIGINS_SET / CV_ALLOWED_ORIGINS_SET / EMAIL_ALLOWED_ORIGINS_SET
+#    NOTIFICATION_RECIPIENT_SET
+#    VITE_MEDIA_V2 / MEDIA_BACKEND_READY
+#    VITE_CONFIRMED_CONTACT_EMAIL (optional monitored public fallback)
+#    MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER (true once for the first deploy, then false)
+#
+#  The *_SET values are commissioning attestations, not secrets. The actual
+#  Turnstile, CORS and email secrets live in Supabase Edge Function secrets.
+#
+#  The trust policy (public key + approved targets) is committed at
+#  ops/milkpop-trust-policy.json and is what verification is judged against.
+# =============================================================================
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_number:
+        description: 'Monotonic positive integer (must exceed the last deployed)'
+        required: true
+      release_identity:
+        description: 'Optional confirmation of the source-owned release identity; must match .env.example exactly'
+        required: false
+      evidence_doc:
+        description: 'Current release evidence file committed in the repository'
+        required: false
+        default: 'CURRENT-RELEASE-EVIDENCE.md'
+
+permissions:
+  contents: read
+
+# Never let two production seals race the monotonic release counter or deploy
+# out of order. A queued release waits; it is not cancelled mid-seal.
+concurrency:
+  group: milkpop-production-mutation
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    environment: production        # protect this environment with required reviewers
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0           # need full history so git_commit is meaningful
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+
+      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf
+        with:
+          version: 2.84.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install and start PostgreSQL 17 for the release verification lane
+        run: |
+          bash scripts/install-postgresql-17.sh
+          sudo service postgresql start
+          sudo -u postgres psql -Atqc 'select version();' | grep -Eq '^PostgreSQL 17\.' || { echo 'PostgreSQL 17 server required'; exit 1; }
+
+          # The historical local harnesses invoke `su postgres -c ...`. A
+          # GitHub-hosted runner is not root, so ordinary su would prompt for a
+          # locked postgres password. Put a CI-only compatibility wrapper first
+          # on PATH; it preserves the same command boundary through passwordless
+          # sudo and does not alter the test implementations.
+          CI_BIN="$RUNNER_TEMP/milkpop-ci-bin"
+          mkdir -p "$CI_BIN"
+          cat > "$CI_BIN/su" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [ "$#" -eq 3 ] && [ "$1" = "postgres" ] && [ "$2" = "-c" ]; then
+            exec sudo -n -u postgres bash -lc "$3"
+          fi
+          exec /usr/bin/su "$@"
+          SH
+          chmod 755 "$CI_BIN/su"
+          echo "$CI_BIN" >> "$GITHUB_PATH"
+
+      - name: Refuse to build from a dirty tree
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "working tree is dirty — refusing to build a release"; exit 1
+          fi
+
+      - name: Verify the release commit is the current default-branch head
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-release-source-ref.mjs
+
+      - name: Determine release metadata
+        id: rel
+        run: |
+          # Production publication has one human initiation path: this protected
+          # manual workflow. The operator supplies the monotonic release number.
+          N="${{ inputs.release_number }}"
+          case "$N" in ''|*[!0-9]*) echo "release number must be a positive integer"; exit 1 ;; esac
+          if [ "$N" -le 0 ]; then echo "release number must be a positive integer"; exit 1; fi
+
+          # The release identity is code-owned. CI may confirm it explicitly,
+          # but must never invent a different identity from a tag or run number:
+          # the browser, source manifest, evidence, receipts and deployed marker
+          # must all describe the same reviewed release.
+          SOURCE_IDENT="$(sed -n 's/^VITE_RELEASE_IDENTITY=//p' .env.example | tail -n 1 | tr -d '\r')"
+          case "$SOURCE_IDENT" in ''|*[!A-Za-z0-9._-]*) echo "source release identity is missing or unsafe"; exit 1 ;; esac
+          IDENT="${{ inputs.release_identity }}"
+          if [ -z "$IDENT" ]; then IDENT="$SOURCE_IDENT"; fi
+          case "$IDENT" in ''|*[!A-Za-z0-9._-]*) echo "release identity contains unsafe characters"; exit 1 ;; esac
+          if [ "$IDENT" != "$SOURCE_IDENT" ]; then
+            echo "requested release identity does not match the source-owned identity" >&2
+            echo "requested: $IDENT" >&2
+            echo "source:    $SOURCE_IDENT" >&2
+            exit 1
+          fi
+
+          EVID="${{ inputs.evidence_doc }}"
+          if [ -z "$EVID" ]; then EVID="CURRENT-RELEASE-EVIDENCE.md"; fi
+          case "$EVID" in /*|*..*) echo "evidence path is unsafe"; exit 1 ;; esac
+          if [ ! -f "$EVID" ]; then echo "evidence document not found: $EVID"; exit 1; fi
+
+          echo "number=$N" >> "$GITHUB_OUTPUT"
+          echo "identity=$IDENT" >> "$GITHUB_OUTPUT"
+          echo "evidence=$EVID" >> "$GITHUB_OUTPUT"
+          echo "release number: $N"
+          echo "release identity: $IDENT"
+          echo "evidence: $EVID"
+
+      - name: Validate every protected production input before any mutation
+        env:
+          MP_SIGNING_KEY_TEXT: ${{ secrets.MP_SIGNING_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PROBE_USER_EMAIL: ${{ secrets.PROBE_USER_EMAIL }}
+          PROBE_USER_PASSWORD: ${{ secrets.PROBE_USER_PASSWORD }}
+          PRODUCTION_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          PRODUCTION_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          PRODUCTION_OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          MP_SITE_DOMAIN: ${{ vars.MP_SITE_DOMAIN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SERVER_ENABLED: ${{ vars.TURNSTILE_SERVER_ENABLED }}
+          TURNSTILE_SECRET_SET: ${{ vars.TURNSTILE_SECRET_SET }}
+          FORM_ALLOWED_ORIGINS_SET: ${{ vars.FORM_ALLOWED_ORIGINS_SET }}
+          CV_ALLOWED_ORIGINS_SET: ${{ vars.CV_ALLOWED_ORIGINS_SET }}
+          EMAIL_ALLOWED_ORIGINS_SET: ${{ vars.EMAIL_ALLOWED_ORIGINS_SET }}
+          NOTIFICATION_RECIPIENT_SET: ${{ vars.NOTIFICATION_RECIPIENT_SET }}
+          VITE_MEDIA_V2: ${{ vars.VITE_MEDIA_V2 }}
+          MEDIA_BACKEND_READY: ${{ vars.MEDIA_BACKEND_READY }}
+          MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER: ${{ vars.MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER }}
+        run: node scripts/validate-production-release-inputs.mjs
+
+      - name: Refuse rollback against the currently live release
+        env:
+          MP_SITE_DOMAIN: ${{ vars.MP_SITE_DOMAIN }}
+          MP_RELEASE_NUMBER: ${{ steps.rel.outputs.number }}
+          MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER: ${{ vars.MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER }}
+        run: node scripts/check-live-release-floor.mjs
+
+      - name: Run the complete locked source verification for this exact release commit
+        run: npm run verify
+
+      - name: Run release-only deployment and provenance checks
+        run: |
+          npm run test:deno
+          node scripts/materialize-verified-dist.test.mjs
+          node scripts/validate-production-release-inputs.test.mjs
+          node scripts/decide-public-function-deploy.test.mjs
+          node scripts/function-rollback-recovery.test.mjs
+          npm run test:netlify-promotion
+          npm run test:release-source-ref
+          npm run test:live-release-waiter
+          npm run test:provenance
+
+      - name: Verify the live production database exactly matches this source
+        env:
+          MP_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          MP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          MP_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          MP_PROBE_EMAIL: ${{ secrets.PROBE_USER_EMAIL }}
+          MP_PROBE_PASSWORD: ${{ secrets.PROBE_USER_PASSWORD }}
+          MP_MANIFEST: release-manifest.json
+        run: |
+          mkdir -p artifacts/release-backend
+          node scripts/deployed-acceptance-probe.mjs 2>&1 \
+            | tee artifacts/release-backend/deployed-acceptance.log
+
+      - name: Seal — ONE production build, verified and signed
+        env:
+          MP_RELEASE_IDENTITY: ${{ steps.rel.outputs.identity }}
+          MP_RELEASE_NUMBER: ${{ steps.rel.outputs.number }}
+          MP_EVIDENCE_DOC: ${{ steps.rel.outputs.evidence }}
+          MP_GIT_COMMIT: ${{ github.sha }}
+          MP_SITE_DOMAIN: ${{ vars.MP_SITE_DOMAIN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          VITE_DEPLOYMENT_MODE: production
+          VITE_RELEASE_IDENTITY: ${{ steps.rel.outputs.identity }}
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SITE_URL: https://${{ vars.MP_SITE_DOMAIN }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SERVER_ENABLED: ${{ vars.TURNSTILE_SERVER_ENABLED }}
+          TURNSTILE_SECRET_SET: ${{ vars.TURNSTILE_SECRET_SET }}
+          FORM_ALLOWED_ORIGINS_SET: ${{ vars.FORM_ALLOWED_ORIGINS_SET }}
+          CV_ALLOWED_ORIGINS_SET: ${{ vars.CV_ALLOWED_ORIGINS_SET }}
+          EMAIL_ALLOWED_ORIGINS_SET: ${{ vars.EMAIL_ALLOWED_ORIGINS_SET }}
+          NOTIFICATION_RECIPIENT_SET: ${{ vars.NOTIFICATION_RECIPIENT_SET }}
+          VITE_MEDIA_V2: ${{ vars.VITE_MEDIA_V2 }}
+          MEDIA_BACKEND_READY: ${{ vars.MEDIA_BACKEND_READY }}
+          VITE_CONFIRMED_CONTACT_EMAIL: ${{ vars.VITE_CONFIRMED_CONTACT_EMAIL }}
+          # Deliberately disabled until their separate safety gates are real.
+          VITE_CAREERS_CV_UPLOAD: "false"
+          CAREERS_CV_E2E_PASSED: "false"
+          CV_SCANNER_ATTESTED: "false"
+          MEDIA_CLEANUP_ENABLED: "false"
+          RETENTION_INVARIANT_TESTS_PASSED: "false"
+          VITE_LEGACY_IMPORT: "false"
+          VITE_ALLOW_BACKENDLESS: "false"
+          OUT_DIR: ${{ github.workspace }}/release-out
+          MP_TRUST_POLICY: ${{ github.workspace }}/ops/milkpop-trust-policy.json
+        run: |
+          umask 077
+          KEY_FILE="/tmp/milkpop-signing-key-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.pem"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s' "${{ secrets.MP_SIGNING_KEY }}" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          export MP_SIGNING_KEY="$KEY_FILE"
+          node scripts/production-release-preflight.mjs
+          bash scripts/release-seal.sh
+
+      # Production verification is the DEFAULT — no flag needed, and a
+      # development build or an unsigned/rolled-back release fails here.
+      - name: Verify the signed release (production)
+        run: |
+          mkdir -p artifacts/release-provenance
+          node scripts/verify-archive-manifest.mjs \
+            --set release-out/release-set.json \
+            --trust ops/milkpop-trust-policy.json 2>&1 \
+            | tee artifacts/release-provenance/signed-release-verification.log
+
+      - name: Materialize deployment bytes from the verified signed package
+        run: |
+          node scripts/materialize-verified-dist.mjs \
+            release-out/release-set.json \
+            release-out/verified-dist
+
+      - name: Verify production Edge Function secret inventory
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          MP_EXPECT_TURNSTILE: ${{ vars.TURNSTILE_SERVER_ENABLED }}
+        run: |
+          mkdir -p artifacts/release-backend
+          supabase secrets list --project-ref "$MP_SUPABASE_PROJECT_REF" --output json > /tmp/supabase-secrets.json
+          node scripts/verify-supabase-secrets.mjs /tmp/supabase-secrets.json \
+            | tee artifacts/release-backend/secret-inventory.log
+          rm -f /tmp/supabase-secrets.json
+
+      - name: Recheck rollback floor immediately before deployment
+        id: live_floor
+        env:
+          MP_SITE_DOMAIN: ${{ vars.MP_SITE_DOMAIN }}
+          MP_RELEASE_NUMBER: ${{ steps.rel.outputs.number }}
+          MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER: ${{ vars.MP_ALLOW_FIRST_DEPLOY_WITHOUT_MARKER }}
+        run: node scripts/check-live-release-floor.mjs
+
+      - name: Decide whether the signed public/staff backend changed
+        id: backend_plan
+        env:
+          FIRST_DEPLOY: ${{ steps.live_floor.outputs.first_deploy }}
+          LIVE_PUBLIC_FUNCTION_SET_SHA256: ${{ steps.live_floor.outputs.live_public_function_set_sha256 }}
+        run: node scripts/decide-public-function-deploy.mjs release-out/release-set.json
+
+      - name: Upload the exact signed build as a non-live Netlify draft
+        id: draft
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          node scripts/deploy-netlify-zip.mjs \
+            release-out/verified-dist \
+            release-out/release-set.json \
+            release-out/netlify-draft.json
+
+      - name: Verify the non-live draft before publication
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/release-live
+          DRAFT_URL="$(node -e "const r=require('./release-out/netlify-draft.json'); process.stdout.write(r.deploy_url)")"
+          STAGING_URL="$DRAFT_URL" npm run test:headers-live 2>&1 \
+            | tee artifacts/release-live/draft-headers.log
+          DEPLOY_URL="$DRAFT_URL" npm run test:seo-live 2>&1 \
+            | tee artifacts/release-live/draft-seo.log
+
+      - name: Install Chromium and WebKit for production compatibility proof
+        run: ./node_modules/.bin/playwright install --with-deps chromium webkit
+
+      - name: Verify the current live owner flow before changing backend functions
+        env:
+          SMOKE_BROWSER: chromium
+          SMOKE_SITE_URL: https://${{ vars.MP_SITE_DOMAIN }}
+          SMOKE_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          SMOKE_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          SMOKE_OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+          FIRST_DEPLOY: ${{ steps.live_floor.outputs.first_deploy }}
+        run: |
+          set -euo pipefail
+          if [ "$FIRST_DEPLOY" = "true" ]; then
+            echo 'FIRST_DEPLOY_NO_PREVIOUS_LIVE_SITE' | tee artifacts/release-backend/auth-before-backend.log
+          else
+            npm run test:live-auth-browser 2>&1 \
+              | tee artifacts/release-backend/auth-before-backend.log
+          fi
+
+      - name: Deploy the complete public/staff Edge Function set only when its signed identity changed
+        id: backend_functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          DEPLOY_FUNCTIONS: ${{ steps.backend_plan.outputs.deploy_functions }}
+          CANDIDATE_PUBLIC_FUNCTION_SET_SHA256: ${{ steps.backend_plan.outputs.candidate_public_function_set_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ "$DEPLOY_FUNCTIONS" = "false" ]; then
+            echo "FUNCTION_DEPLOY_SKIPPED_UNCHANGED public_function_set_sha256=$CANDIDATE_PUBLIC_FUNCTION_SET_SHA256" \
+              | tee artifacts/release-backend/function-deploy.log
+          else
+            bash launch/deploy-public-functions.sh 2>&1 \
+              | tee artifacts/release-backend/function-deploy.log
+          fi
+
+      - name: Restore previous Edge Functions after a partial deployment failure
+        if: ${{ failure() && steps.backend_plan.outputs.deploy_functions == 'true' && steps.backend_functions.outcome == 'failure' && steps.live_floor.outputs.first_deploy == 'false' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          PREVIOUS_GIT_COMMIT: ${{ steps.live_floor.outputs.live_git_commit }}
+          PREVIOUS_PUBLIC_FUNCTION_SET_SHA256: ${{ steps.live_floor.outputs.live_public_function_set_sha256 }}
+        run: |
+          bash scripts/restore-public-functions-from-git.sh \
+            "$PREVIOUS_GIT_COMMIT" "$PREVIOUS_PUBLIC_FUNCTION_SET_SHA256" 2>&1 \
+            | tee artifacts/release-backend/function-rollback.log
+
+      - name: Verify public forms, Turnstile, CORS, direct email and durable outbox delivery after function deployment
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          MP_EXPECTED_ORIGIN: https://${{ vars.MP_SITE_DOMAIN }}
+          PRODUCTION_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          PRODUCTION_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node scripts/public-form-rejection.live.mjs 2>&1 \
+            | tee artifacts/release-backend/public-form-live.log
+          node scripts/turnstile-pairing.live.mjs 2>&1 \
+            | tee artifacts/release-backend/turnstile-live.log
+          node scripts/edge-cors.live.mjs 2>&1 \
+            | tee artifacts/release-backend/edge-cors-live.log
+          node scripts/email-delivery.live.mjs 2>&1 \
+            | tee artifacts/release-backend/email-delivery-live.log
+          node scripts/outbox-delivery.live.mjs 2>&1 \
+            | tee artifacts/release-backend/outbox-delivery-live.log
+
+      - name: Verify the previously live owner/MFA flow still works with the newly deployed backend
+        env:
+          SMOKE_BROWSER: chromium
+          SMOKE_SITE_URL: https://${{ vars.MP_SITE_DOMAIN }}
+          SMOKE_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          SMOKE_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          SMOKE_OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+          FIRST_DEPLOY: ${{ steps.live_floor.outputs.first_deploy }}
+        run: |
+          set -euo pipefail
+          if [ "$FIRST_DEPLOY" = "true" ]; then
+            echo 'FIRST_DEPLOY_NO_PREVIOUS_LIVE_SITE' | tee artifacts/release-backend/auth-after-backend.log
+          else
+            npm run test:live-auth-browser 2>&1 \
+              | tee artifacts/release-backend/auth-after-backend.log
+          fi
+
+      - name: Restore previous Edge Functions after failed pre-publication backend proof
+        if: ${{ failure() && steps.backend_plan.outputs.deploy_functions == 'true' && steps.backend_functions.outcome == 'success' && steps.live_floor.outputs.first_deploy == 'false' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          PREVIOUS_GIT_COMMIT: ${{ steps.live_floor.outputs.live_git_commit }}
+          PREVIOUS_PUBLIC_FUNCTION_SET_SHA256: ${{ steps.live_floor.outputs.live_public_function_set_sha256 }}
+        run: |
+          bash scripts/restore-public-functions-from-git.sh \
+            "$PREVIOUS_GIT_COMMIT" "$PREVIOUS_PUBLIC_FUNCTION_SET_SHA256" 2>&1 \
+            | tee artifacts/release-backend/function-rollback.log
+
+      - name: Promote the exact verified Netlify draft
+        id: promote
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          node scripts/promote-netlify-deploy.mjs \
+            release-out/netlify-draft.json \
+            release-out/release-set.json \
+            release-out/netlify-publish.json
+
+      - name: Wait for the exact signed release marker to become live
+        env:
+          MP_SITE_DOMAIN: ${{ vars.MP_SITE_DOMAIN }}
+        run: node scripts/wait-for-live-release.mjs release-out/release-set.json 2>&1 | tee artifacts/release-live/live-marker.log
+
+      - name: Verify live security headers and SEO/database parity
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          DOMAIN="${{ vars.MP_SITE_DOMAIN }}"
+          STAGING_URL="https://$DOMAIN" npm run test:headers-live 2>&1 \
+            | tee artifacts/release-live/headers-live.log
+          DEPLOY_URL="https://$DOMAIN" npm run test:seo-live 2>&1 \
+            | tee artifacts/release-live/seo-live.log
+
+      - name: Verify live owner sign-in and MFA in Chromium
+        env:
+          SMOKE_BROWSER: chromium
+          SMOKE_SITE_URL: https://${{ vars.MP_SITE_DOMAIN }}
+          SMOKE_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          SMOKE_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          SMOKE_OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+        run: npm run test:live-auth-browser 2>&1 | tee artifacts/release-live/auth-browser-chromium.log
+
+      - name: Verify live owner sign-in and MFA in WebKit
+        env:
+          SMOKE_BROWSER: webkit
+          SMOKE_SITE_URL: https://${{ vars.MP_SITE_DOMAIN }}
+          SMOKE_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          SMOKE_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          SMOKE_OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+        run: npm run test:live-auth-browser 2>&1 | tee artifacts/release-live/auth-browser-webkit.log
+
+      - name: Record the complete production deployment receipt
+        run: |
+          node scripts/write-deployment-receipt.mjs \
+            release-out/release-set.json \
+            ops/milkpop-trust-policy.json \
+            release-out/deployment-receipt.json \
+            artifacts/release-provenance/signed-release-verification.log \
+            artifacts/release-backend/deployed-acceptance.log \
+            artifacts/release-backend/secret-inventory.log \
+            artifacts/release-backend/auth-before-backend.log \
+            artifacts/release-backend/function-deploy.log \
+            artifacts/release-backend/auth-after-backend.log \
+            artifacts/release-backend/public-form-live.log \
+            artifacts/release-backend/turnstile-live.log \
+            artifacts/release-backend/edge-cors-live.log \
+            artifacts/release-backend/email-delivery-live.log \
+            artifacts/release-backend/outbox-delivery-live.log \
+            release-out/netlify-draft.json \
+            artifacts/release-live/draft-headers.log \
+            artifacts/release-live/draft-seo.log \
+            release-out/netlify-publish.json \
+            artifacts/release-live/live-marker.log \
+            artifacts/release-live/headers-live.log \
+            artifacts/release-live/seo-live.log \
+            artifacts/release-live/auth-browser-chromium.log \
+            artifacts/release-live/auth-browser-webkit.log
+
+      - name: Restore the previous frontend and backend after failed post-publication proof
+        if: ${{ failure() && steps.promote.outcome == 'success' && steps.live_floor.outputs.first_deploy == 'false' }}
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          PREVIOUS_GIT_COMMIT: ${{ steps.live_floor.outputs.live_git_commit }}
+          PREVIOUS_PUBLIC_FUNCTION_SET_SHA256: ${{ steps.live_floor.outputs.live_public_function_set_sha256 }}
+          BACKEND_CHANGED: ${{ steps.backend_plan.outputs.deploy_functions }}
+        run: |
+          set -euo pipefail
+          node scripts/rollback-netlify-deploy.mjs \
+            release-out/netlify-publish.json \
+            release-out/netlify-rollback.json
+          if [ "$BACKEND_CHANGED" = "true" ]; then
+            bash scripts/restore-public-functions-from-git.sh \
+              "$PREVIOUS_GIT_COMMIT" "$PREVIOUS_PUBLIC_FUNCTION_SET_SHA256" 2>&1 \
+              | tee artifacts/release-backend/function-rollback-post-publication.log
+          else
+            echo 'BACKEND_ROLLBACK_SKIPPED_UNCHANGED — only the frontend changed in this release.'
+          fi
+          echo 'RELEASE_ROLLBACK_PASS — previous frontend restored; previous backend restored when this release changed it.'
+
+      - name: Record first-release post-publication failure honestly
+        if: ${{ failure() && steps.promote.outcome == 'success' && steps.live_floor.outputs.first_deploy == 'true' }}
+        run: |
+          echo 'FIRST_RELEASE_POST_PUBLICATION_FAILURE — no previous trusted MilkPop release exists to restore automatically.' \
+            | tee artifacts/release-live/first-release-post-publication-failure.log
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: milkpop-release-failure-${{ github.run_number }}
+          path: |
+            artifacts/release-provenance/
+            artifacts/release-backend/
+            artifacts/release-live/
+            release-out/*.json
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: milkpop-release-${{ steps.rel.outputs.number }}
+          path: |
+            release-out/*.zip
+            release-out/*.manifest.json
+            release-out/release-set.json
+            release-out/netlify-*.json
+            release-out/deployment-receipt.json
+            artifacts/release-provenance/
+            artifacts/release-backend/
+            artifacts/release-live/

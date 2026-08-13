@@ -1,0 +1,84 @@
+# =============================================================================
+#  MILK POP — Supabase project configuration (OPT-01 §5.1)
+#
+#  THE source-controlled record of every Edge Function's Verify-JWT mode.
+#  `supabase functions deploy <name>` reads [functions.<name>].verify_jwt from
+#  this file, so a deploy from the repo reproduces the intended toggle without
+#  relying on command-line flags or dashboard memory. launch/launch.sh keeps
+#  its explicit flags as belt-and-braces; the two MUST agree —
+#  scripts/opt01-contract.test.mjs asserts they do.
+#
+#  Threat model per mode:
+#    verify_jwt = true   platform rejects requests without a valid Supabase
+#                        JWT BEFORE the function runs (staff/owner-only
+#                        functions; each still re-checks role/AAL2 inside).
+#    verify_jwt = false  anonymous callers are the POINT (public forms,
+#                        candidate CV upload) or auth is a device token, not
+#                        a user JWT (POS till per docs/GATE10-RUNBOOK.md).
+#                        These functions are self-enforcing inside.
+# =============================================================================
+
+# Local project identifier only — the deploy target is the LINKED project ref
+# (supabase link --project-ref <ref>), never this value.
+project_id = "milkpop"
+
+# ---- production Edge Functions (launch set, launch/launch.sh §3) -----------
+[functions.send-email]
+verify_jwt = true            # staff-only sender
+
+[functions.cv-signed-url]
+verify_jwt = true            # managers/owners only
+
+[functions.cv-upload]
+verify_jwt = false           # anon candidates; self-enforcing (Turnstile/rate/magic-byte)
+
+[functions.public-form]
+verify_jwt = false           # anon submitters; self-enforcing (idempotency/hash/rate)
+
+[functions.training-media]
+verify_jwt = true            # staff-only media
+
+[functions.staff-doc-upload]
+verify_jwt = true            # staff; magic-byte checks inside
+
+[functions.staff-doc-url]
+verify_jwt = true            # 60s signed URLs after access check
+
+[functions.staff-doc-delete]
+verify_jwt = true            # owner-only removal, audited
+
+[functions.staff-invite]
+verify_jwt = true            # owners/managers; needs SITE_URL secret
+
+[functions.media-upload]
+verify_jwt = true            # staff media pipeline (WP-04R); owner/manager checks inside
+
+[functions.media-cleanup]
+verify_jwt = true            # owner + AAL2 inside; INERT until MEDIA_CLEANUP_ENABLED=true
+
+[functions.request-seo-rebuild]
+verify_jwt = true            # OPT-02-C1.2: genuine JWT required (anon rejected);
+                             # owner/store_manager verified server-side inside;
+                             # records protected-release-pending; never invokes hosting directly
+
+# ---- POS device endpoints --------------------------------------------------
+[functions.pos-pair]
+verify_jwt = false           # device pairing bootstrap; pairing-code auth inside
+
+[functions.pos-ingest]
+verify_jwt = false           # device-token auth (SYNC-CONTRACT), not a user JWT
+
+[functions.pos-catalog]
+verify_jwt = false           # device-token auth (SYNC-CONTRACT), not a user JWT
+
+# ---- R4.8 launch-closure functions -----------------------------------------
+[functions.outbox-dispatch]
+verify_jwt = false           # invoked by the SCHEDULER, not a browser; the
+                             # function itself refuses any bearer that is not
+                             # the service-role key (401), so JWT-off at the
+                             # gateway does not widen access
+
+[functions.employee-access-revoke]
+verify_jwt = true            # staff USER JWT required; additionally verifies a
+                             # fresh audited admin_recovery_intents row before
+                             # any Auth-API action

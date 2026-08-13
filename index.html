@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <!-- WP-04: fonts are SELF-HOSTED (/fonts/*.woff2 via src/index.css) — no
+         third-party font CDN, no visitor IP disclosure (UK GDPR).
+         LAUNCH-POLISH (R4.6): the two weights that render above the fold are
+         PRELOADED. Without this they are only discovered after the stylesheet
+         has been fetched and parsed, which is one full round-trip of fallback
+         text on a cold visit. `crossorigin` is required even though these are
+         same-origin: font fetches are CORS-mode, and a preload whose mode does
+         not match the real request is silently discarded and downloads twice.
+         Only 400 and 600 are preloaded — preloading all seven would compete
+         with the LCP image for the same connection. -->
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/Poppins-400.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/Poppins-600.woff2" crossorigin />
+    <!-- The mascot is the homepage LCP image. Discover it in the HTML rather
+         than waiting for React and the CSS bundle; 28 KB is small enough that
+         this remains a net win for the primary customer entry route. -->
+    <link id="mp-route-image-preload" rel="preload" as="image" type="image/webp" href="/brand/mascot_wave.webp" fetchpriority="high" />
+    <meta name="description" content="MILK POP — milkshakes, smoothies, soft serve and slush. View the published menu, store information and contact details." />
+    <meta name="theme-color" content="#A46832" />
+    <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/brand/favicon-192.png" type="image/png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
+    <meta property="og:title" content="MILK POP — Milkshake Bar" />
+    <meta property="og:description" content="Explore the published Milk Pop menu, store information and contact details." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/brand/og-card.png" />
+    <title>MILK POP — Milkshake Bar</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- LAUNCH-POLISH (R4.6): with scripting off this page was blank — no
+         text, no links, no way to reach us. The prerenderer replaces the block
+         below with page-specific content on every generated route; this copy is
+         the shell fallback for any route the prerenderer does not cover. -->
+    <noscript>
+      <div style="max-width:42rem;margin:0 auto;padding:2.5rem 1.25rem;font-family:system-ui,sans-serif;color:#2E2A26;line-height:1.6">
+        <h1 style="font-size:1.75rem;margin:0 0 .5rem">Milk Pop</h1>
+        <p>Menu, store information and contact details for Milk Pop.</p>
+        <p>This site needs JavaScript for its interactive menu, forms and account features. With scripting turned off you can still reach every public page:</p>
+        <ul>
+          <li><a href="/menu/">Menu</a></li>
+          <li><a href="/stores/">Stores</a></li>
+          <li><a href="/about/">About us</a></li>
+          <li><a href="/contact/">Contact</a></li>
+          <li><a href="/privacy/">Privacy notice</a></li>
+          <li><a href="/gdpr/">Your data rights</a></li>
+        </ul>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

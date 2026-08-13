@@ -1,0 +1,279 @@
+/* MILK POP brand stylesheet — tokens taken 1:1 from the brandbook.
+   TYPEFACES (WP-04): every font is SELF-HOSTED from /public/fonts — no
+   fonts.googleapis.com / fonts.gstatic.com requests reach visitors (UK GDPR:
+   a Google Fonts CDN hit discloses the visitor's IP to Google; see the 2022
+   Munich LG ruling). The brandbook names "Unageo", whose files were never
+   present (the old @font-face pointed at four non-existent paths — the four
+   permanent build warnings). Decision recorded in the WP-04 phase report:
+   Unageo is DROPPED until licensed files exist; Poppins (OFL) is the brand
+   sans in production. scripts/css-assets.test.mjs proves every url() below
+   resolves to a real shipped file, so this can never silently regress. */
+@import "tailwindcss";
+
+/* The brand is intentionally light-only; keep native controls from switching
+   to dark styling when the device itself uses dark mode. */
+html { color-scheme: light; }
+
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-300.woff2') format('woff2');
+  font-weight: 300; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-400.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-500.woff2') format('woff2');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-600.woff2') format('woff2');
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-700.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/Poppins-800.woff2') format('woff2');
+  font-weight: 800; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-var.woff2') format('woff2');
+  font-weight: 100 800; font-style: normal; font-display: swap;
+}
+
+/* ------------------------------------------------------------------ *
+ *  LAUNCH-POLISH (R4.6): skip link.
+ *  Written as explicit CSS rather than utility classes so it cannot
+ *  depend on which utilities a future Tailwind build happens to emit —
+ *  a skip link that silently loses its styling becomes a visible piece
+ *  of stray text on every page, which is worse than not having one.
+ *  Off-screen until focused; on focus it becomes a normal, visible,
+ *  high-contrast control. WCAG 2.1 SC 2.4.1.
+ * ------------------------------------------------------------------ */
+.mp-skip-link {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  z-index: 100;
+}
+.mp-skip-link:focus,
+.mp-skip-link:focus-visible {
+  left: 0.75rem;
+  top: 0.75rem;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: #2E2A26;
+  color: #ffffff;
+  font-weight: 600;
+  text-decoration: none;
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* The main landmark is focus()-able as a skip target but must never show a
+   focus ring when it receives focus programmatically. */
+main:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------------ *
+ *  LAUNCH-POLISH (R4.6): accessible muted text.
+ *  The public pages used Tailwind's `text-gray-400` (#99A1AF) for
+ *  secondary copy — helper text, stat captions, timestamps. On white
+ *  that is 2.60:1, well under the 4.5:1 AA minimum for normal text, and
+ *  it is a COOL blue-grey that never belonged in a warm caramel palette
+ *  in the first place. #6B6560 is a warm neutral of the same family as
+ *  the ink (#2E2A26): 5.74:1 on white and 5.03:1 on the cream section
+ *  background (#F5EFE7), so it passes AA on every surface it is used on.
+ *  Defined once here rather than repeated as an arbitrary value, so the
+ *  next person changes one number instead of nineteen.
+ * ------------------------------------------------------------------ */
+.mp-muted { color: #6B6560; }
+
+/* ------------------------------------------------------------------ *
+ *  LAUNCH-POLISH (R4.6, round 4): footer link tap targets.
+ *  Measured on a 390x844 mobile viewport, every footer link was 17 px
+ *  tall. WCAG 2.2 SC 2.5.8 (AA) sets a 24x24 CSS-px minimum for pointer
+ *  targets. These are standalone navigation links in a list, not links
+ *  inside a sentence, so the "inline" exception does not apply to them.
+ *  inline-flex + min-height grows the hit area to 24 px without changing
+ *  the type size, the colour or the line rhythm — the footer looks the
+ *  same and is materially easier to hit with a thumb.
+ * ------------------------------------------------------------------ */
+.mp-footer-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* R4.7: the not-found actions are primary controls on a page a visitor
+   reached by accident — they get a comfortable 44px target, well above the
+   24px WCAG 2.2 minimum, because this is the one page where a mis-tap costs
+   the visitor a second wrong turn. */
+.mp-notfound-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+
+@theme {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Poppins", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Brandbook palette — Фирменные цвета */
+  --color-caramel: #A46832;      /* RGB 189 120 58 · Pantone 287C */
+  --color-caramel-dark: #A5642B;
+  --color-milkblue: #7CC0C7;     /* RGB 124 192 199 · Pantone 285C */
+  --color-milkblue-dark: #5FA9B1;
+  --color-ink: #2E2A26;
+  --color-milk: #FFFFFF;
+  --color-cream: #F7EFE6;
+  --color-warmline: #EBDECE;
+}
+
+/* Tailwind does not provide a `text-2xs` utility by default. The application
+   uses that semantic class extensively for supporting operational copy, so
+   define it once at a readable 12px rather than letting it inherit unpredictably. */
+.text-2xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+body {
+  background-color: #FFFFFF;
+  color: #2E2A26;
+  font-family: var(--font-sans);
+  font-weight: 300; /* brandbook: body copy is set in the Light cut */
+}
+
+/* Brandbook typography rule of 50%: body 14 → subheads 18 (bold) → headings 34 (bold) */
+h1, h2, h3, h4, h5, h6, strong, b { font-weight: 700; }
+
+/* Custom Scrollbar suppression */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Gentle float for mascot/sticker accents */
+@keyframes mp-float {
+  0%, 100% { transform: translateY(0) rotate(var(--mp-tilt, 0deg)); }
+  50% { transform: translateY(-10px) rotate(var(--mp-tilt, 0deg)); }
+}
+.mp-float { animation: mp-float 5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .mp-float { animation: none; }
+}
+
+/* ============================================================
+   MOTION SYSTEM — Apple-style physics and micro-interactions
+   ============================================================ */
+
+/* Mascot: gentle breathing bob for the whole body */
+@keyframes mp-bob {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-14px) rotate(1deg); }
+}
+.mp-bob { animation: mp-bob 4.5s ease-in-out infinite; transform-origin: 50% 90%; }
+
+/* Mascot: waving — an enthusiastic hello every few seconds */
+@keyframes mp-wave {
+  0%, 52%, 100% { transform: rotate(0deg) scale(1); }
+  56% { transform: rotate(-6deg) scale(1.015); }
+  61% { transform: rotate(5deg) scale(1.02); }
+  66% { transform: rotate(-6deg) scale(1.015); }
+  71% { transform: rotate(4deg) scale(1.01); }
+  76% { transform: rotate(-3deg) scale(1.005); }
+  82% { transform: rotate(0deg) scale(1); }
+}
+.mp-wave { animation: mp-wave 4.6s ease-in-out infinite; transform-origin: 52% 88%; }
+
+/* Slow ambient drift for background stickers */
+@keyframes mp-drift {
+  0%, 100% { transform: translate(0, 0) rotate(var(--mp-tilt, 0deg)); }
+  33% { transform: translate(6px, -12px) rotate(calc(var(--mp-tilt, 0deg) + 3deg)); }
+  66% { transform: translate(-5px, -6px) rotate(calc(var(--mp-tilt, 0deg) - 2deg)); }
+}
+.mp-drift { animation: mp-drift 9s ease-in-out infinite; }
+
+/* Soft entrance used by scroll reveals as a CSS fallback */
+@keyframes mp-rise {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Apple-style frosted glass surface */
+.mp-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Buttery hover lift for interactive cards */
+.mp-lift {
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mp-lift:hover {
+  transform: translateY(-6px) scale(1.015);
+  box-shadow: 0 24px 48px -16px rgba(46, 42, 38, 0.18);
+}
+
+/* ============================================================
+   BRANDBOOK GEOMETRY — bubbly asymmetric corners & careful tilts
+   The logo's letterforms are uneven blobs; cards echo that with
+   one corner pulled tighter than the rest. Two mirrored variants
+   keep neighbouring cards from lining up symmetrically.
+   ============================================================ */
+.mp-blob-l { border-radius: 28px 14px 28px 28px; }
+.mp-blob-r { border-radius: 14px 28px 28px 28px; }
+.mp-blob-b { border-radius: 28px 28px 14px 28px; }
+
+/* Small decorative tilts — chips, stickers, stamps. Kept under 3°. */
+.mp-tilt-l  { transform: rotate(-2deg); }
+.mp-tilt-r  { transform: rotate(1.5deg); }
+.mp-tilt-l2 { transform: rotate(-1deg); }
+
+/* Warm card shadow tuned to the cream workspace */
+.mp-shadow { box-shadow: 0 10px 30px -18px rgba(189, 120, 58, 0.35); }
+
+/* Smooth page scrolling */
+html { scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-bob, .mp-wave, .mp-drift { animation: none; }
+  .mp-lift, .mp-lift:hover { transition: none; transform: none; }
+  html { scroll-behavior: auto; }
+}
+
+
+/* Small-business touch ergonomics: public forms must remain readable on phones
+   and tablet controls must be comfortably tappable behind the counter. */
+.mp-public-form input,
+.mp-public-form select,
+.mp-public-form textarea {
+  font-size: 16px;
+  min-height: 44px;
+}
+.mp-public-form button { min-height: 44px; }
+
+@media (pointer: coarse) {
+  .mp-admin-shell button, .mp-admin-shell a,
+  .mp-staff-shell button, .mp-staff-shell a { min-height: 44px; }
+  .mp-admin-shell input, .mp-admin-shell select, .mp-admin-shell textarea,
+  .mp-staff-shell input, .mp-staff-shell select, .mp-staff-shell textarea { font-size: 16px; }
+}

@@ -1,0 +1,111 @@
+{
+  "__doc__": [
+    "THE CURRENT ANONYMOUS SELECT SURFACE.",
+    "",
+    "This is an exact allow-list checked in both directions against a database built from the migration chain.",
+    "T13.3.10 removes site_settings from the surface: public_site_configuration is now the sole anonymous",
+    "source for website legal/contact and presentation settings."
+  ],
+  "contract_version": 2,
+  "anon_select_allowed": [
+    {
+      "relation": "site_content",
+      "kind": "table",
+      "status": "permanent",
+      "why": "Editable public copy for every public page."
+    },
+    {
+      "relation": "menu_items_public",
+      "kind": "view",
+      "status": "permanent",
+      "why": "The anonymous menu projection (R4.9 G4). The menu_items base table is revoked."
+    },
+    {
+      "relation": "stores_public",
+      "kind": "view",
+      "status": "permanent",
+      "why": "The anonymous locator projection. The stores base table is revoked."
+    },
+    {
+      "relation": "product_allergen_declarations",
+      "kind": "table",
+      "status": "permanent",
+      "why": "Allergen evidence for published products. RLS already conditions this on state = 'approved'."
+    },
+    {
+      "relation": "allergen_catalogue",
+      "kind": "table",
+      "status": "permanent",
+      "why": "Reference data \u2014 the fourteen statutory allergen names. Contains no business fact."
+    },
+    {
+      "relation": "deals_public",
+      "kind": "view",
+      "status": "permanent",
+      "why": "Increment 5b: filtered public projection replacing the deals base table. "
+    },
+    {
+      "relation": "news_posts_public",
+      "kind": "view",
+      "status": "permanent",
+      "why": "Increment 5b: filtered public projection replacing the news_posts base table. "
+    },
+    {
+      "relation": "job_vacancies_public",
+      "kind": "view",
+      "status": "permanent",
+      "why": "Increment 5b: filtered public projection replacing the job_vacancies base table. "
+    },
+    {
+      "relation": "privacy_notice_current",
+      "kind": "view",
+      "status": "permanent",
+      "why": "INC11: the current published privacy notice per public-form audience. The form must RENDER the notice it records \u2014 display is the first link of the evidence chain, so anonymous visitors read this view."
+    },
+    {
+      "relation": "public_site_configuration",
+      "kind": "view",
+      "status": "permanent",
+      "why": "P0-11: the merged legal/contact + presentation projection every public consumer (footer, contact, legal pages, SEO loader) reads. Definer-side like the other projections; anon never gains launch_settings itself."
+    }
+  ],
+  "must_never_be_anon_selectable": [
+    "stores",
+    "menu_items",
+    "staff_profiles",
+    "payslips",
+    "work_shifts",
+    "clock_history",
+    "job_applications",
+    "contact_messages",
+    "franchise_inquiries",
+    "launch_settings",
+    "admin_recovery_intents",
+    "payroll_export_batches",
+    "notification_outbox",
+    "staff_compliance_records",
+    "sifr_reports",
+    "daily_closes",
+    "orders",
+    "app_state",
+    "daily_sales",
+    "sales_by_channel",
+    "top_products",
+    "popular_modifiers",
+    "deals",
+    "news_posts",
+    "job_vacancies",
+    "cms_pages",
+    "media_assets",
+    "site_settings"
+  ],
+  "anon_write_forbidden": {
+    "__note__": "The three public form tables carry NO anonymous privilege \u2014 not SELECT and not INSERT. Phase B moved submission to the `public-form` Edge Function, which writes server-side with the service role only after Turnstile, rate limiting and the privacy-notice gate. launch/verify-current-baseline.sql asserts this as a baseline invariant and aborts ledger adoption if it is broken.",
+    "relations": [
+      "job_applications",
+      "contact_messages",
+      "franchise_inquiries"
+    ],
+    "submission_path": "supabase/functions/public-form"
+  }
+}

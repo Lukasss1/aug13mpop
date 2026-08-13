@@ -1,0 +1,11 @@
+# ---------------------------------------------------------------------------
+# SPA fallback — any path WITHOUT a prebuilt file (e.g. /careers/<slug>,
+# /news/<slug>, /staff/pos) serves the app shell, which routes client-side.
+# Real files (the SEO pages generated into dist/ at build time, sitemap.xml,
+# assets) always win over this rule on Netlify AND Cloudflare Pages.
+#
+# IMPORTANT: do NOT add a 404.html — on Cloudflare Pages its presence
+# disables the automatic SPA fallback this app relies on.
+# ---------------------------------------------------------------------------
+/.well-known/milkpop-release.json    /index.html    404
+/*    /index.html    200

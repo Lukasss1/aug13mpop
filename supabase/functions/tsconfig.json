@@ -1,0 +1,17 @@
+{
+  "//": "Supabase Edge Functions (Deno runtime). Typechecked as part of `npm run typecheck` (via `npm run typecheck:functions`). Deno globals are provided by deno.d.ts; `deno check supabase/functions/**/*.ts` remains the runtime-faithful check. `moduleDetection: force` treats every file as an ES module (Deno semantics), so import-less functions don't share a global script scope.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "isolatedModules": false,
+    "strict": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["**/*.ts"]
+}

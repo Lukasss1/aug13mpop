@@ -1,0 +1,224 @@
+{
+  "__doc__": "OPT-02-C1.2 SEO source-unification fixture. Simulates the public rows an anonymous visitor reads from Supabase. Every record name is deliberately UNIQUE and absent from the bundled seeds (src/data.ts, src/defaultState.ts, src/siteContent.ts) so a test can prove the static SEO output tracks THIS data and never the seeds. Rows are in snake_case exactly as PostgREST returns them. Some rows are intentionally incomplete/draft so filtering can be proven. Consumed by scripts/seo-source.test.ts (mock PostgREST server) and scripts/seo-prerender.test.ts (SEO_CONTENT_FIXTURE subprocess).",
+  "site_settings": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "brand_name": "Milk Pop Fixtureton",
+      "legal_name": "Fixture Dairy Company Limited",
+      "website_url": "https://milkpop.uk",
+      "instagram_url": "https://instagram.com/milkpop_fixture_ig",
+      "facebook_url": "https://facebook.com/milkpop_fixture_fb",
+      "twitter_url": "",
+      "updated_at": "2026-05-01T09:00:00.000Z",
+      "show_careers": true,
+      "show_franchise": true,
+      "show_news": true
+    }
+  ],
+  "site_content": [
+    {
+      "id": "00000000-0000-4000-8000-0000000000c1",
+      "seo": {
+        "home": {
+          "title": "Riverside Fixtureton Shakes — FIXTURE Home 4821",
+          "description": "FIXTURE home meta 4821 — Supabase-sourced, proving static SEO tracks the live database and never the bundled seed defaults."
+        },
+        "menu": {
+          "title": "FIXTURE Menu 4821 — Shakes, Smoothies & Soft Serve",
+          "description": "FIXTURE menu meta 4821 covering the fixture drink line-up served at the fixture kiosk."
+        },
+        "stores": {
+          "title": "FIXTURE Stores 4821 — Find a Milk Pop Fixtureton Kiosk",
+          "description": "FIXTURE stores meta 4821 listing the fixture kiosk locations and their opening hours."
+        },
+        "careers": {
+          "title": "FIXTURE Careers 4821 — Work at Milk Pop Fixtureton",
+          "description": "FIXTURE careers meta 4821 describing the fixture vacancies open at the fixture kiosk."
+        },
+        "franchise": {
+          "title": "FIXTURE Franchise 4821 — Open Your Own Milk Pop",
+          "description": "FIXTURE franchise meta 4821 outlining the fixture franchise opportunity for prospective partners."
+        },
+        "about": {
+          "title": "FIXTURE About 4821 — The Milk Pop Fixtureton Story",
+          "description": "FIXTURE about meta 4821 telling the fixture brand story behind the fixture kiosk."
+        },
+        "contact": {
+          "title": "FIXTURE Contact 4821 — Get in Touch with Milk Pop",
+          "description": "FIXTURE contact meta 4821 explaining how to reach the fixture team at the fixture kiosk."
+        },
+        "news": {
+          "title": "FIXTURE News 4821 — Milk Pop Fixtureton Updates",
+          "description": "FIXTURE news meta 4821 sharing the latest fixture announcements from the fixture kiosk."
+        }
+      },
+      "legal": {
+        "privacy": {
+          "title": "FIXTURE Privacy Notice 4821",
+          "body": "FIXTURE privacy body 4821. This fixture privacy notice exists purely to satisfy the public-content validation rules while remaining obviously distinct from the bundled seed defaults used only in development."
+        },
+        "gdpr": {
+          "title": "FIXTURE GDPR Notice 4821",
+          "body": "FIXTURE GDPR body 4821. This fixture GDPR notice exists purely to satisfy the public-content validation rules while remaining obviously distinct from the bundled seed defaults used only in development."
+        },
+        "fdd": {
+          "title": "FIXTURE Franchise Disclosure 4821",
+          "body": "FIXTURE FDD body 4821. This fixture franchise disclosure document exists purely to satisfy the public-content validation rules while remaining obviously distinct from the bundled seed defaults used only in development."
+        }
+      },
+      "updated_at": "2026-05-02T10:30:00.000Z"
+    }
+  ],
+  "menu_items": [
+    {
+      "id": "fix-menu-galactic",
+      "name": "Galactic Bubblegum Blast",
+      "description": "A fixture-only bubblegum shake with a unique name that appears in no seed.",
+      "category": "milkshakes",
+      "price": 5.5,
+      "price_large": 6.5,
+      "calories": 540,
+      "tags": [
+        "sweet"
+      ],
+      "allergens": [
+        "milk"
+      ],
+      "image": "",
+      "updated_at": "2026-05-03T08:00:00.000Z"
+    },
+    {
+      "id": "fix-menu-nebula",
+      "name": "Nebula Mango Smoothie",
+      "description": "A fixture-only mango smoothie proving the smoothies section renders from Supabase.",
+      "category": "smoothies",
+      "price": 4.75,
+      "calories": 220,
+      "tags": [
+        "fruit"
+      ],
+      "allergens": [],
+      "image": "",
+      "updated_at": "2026-05-03T08:05:00.000Z"
+    },
+    {
+      "id": "fix-menu-comet",
+      "name": "Comet Vanilla Soft Serve",
+      "description": "A fixture-only soft serve item exercising a third menu section.",
+      "category": "soft_serve",
+      "price": 3.25,
+      "calories": 300,
+      "tags": [],
+      "allergens": [
+        "milk"
+      ],
+      "image": "",
+      "updated_at": "2026-05-03T08:10:00.000Z"
+    },
+    {
+      "id": "fix-menu-invalid-category",
+      "name": "Mystery Unfiled Concoction",
+      "description": "Intentionally invalid category so the publication filter must drop it from SEO output and counts.",
+      "category": "mystery-not-a-real-category",
+      "price": 9.99,
+      "calories": 100,
+      "tags": [],
+      "allergens": [],
+      "image": "",
+      "updated_at": "2026-05-03T08:15:00.000Z"
+    }
+  ],
+  "stores": [
+    {
+      "id": "fix-store-riverside",
+      "name": "Riverside Quay Kiosk",
+      "address": "14 Riverside Quay",
+      "postcode": "RQ1 4KP",
+      "opening_hours": "Mon - Fri: 09:00 - 18:00 | Sat: 10:00 - 20:00",
+      "status": "open",
+      "delivery_links": {},
+      "phone": "+44 20 7946 4821",
+      "email": "riverside@milkpop-fixture.example",
+      "image": "",
+      "coordinates": {
+        "lat": 51.5079,
+        "lng": -0.0877
+      },
+      "updated_at": "2026-05-04T11:00:00.000Z"
+    },
+    {
+      "id": "fix-store-incomplete",
+      "name": "Incomplete Placeholder Stall",
+      "address": "Somewhere TBC",
+      "postcode": "",
+      "opening_hours": "",
+      "status": "coming_soon",
+      "delivery_links": {},
+      "phone": "",
+      "email": "",
+      "image": "",
+      "coordinates": {},
+      "updated_at": "2026-05-04T11:05:00.000Z"
+    }
+  ],
+  "job_vacancies": [
+    {
+      "id": "fix-vac-blender",
+      "title": "Night Shift Blender Artisan",
+      "department": "Kiosk Operations",
+      "location": "Riverside",
+      "salary": "£12.50 - £14.00 per hour",
+      "type": "Full-time",
+      "role_description": "Craft fixture milkshakes through the night at the Riverside Quay Kiosk. This is a fixture-only vacancy present in no seed.",
+      "requirements": [
+        "Availability for night shifts",
+        "Right to work in the UK"
+      ],
+      "responsibilities": [
+        "Blend shakes to spec",
+        "Keep the station spotless"
+      ],
+      "created_at": "2026-04-20T09:00:00.000Z",
+      "updated_at": "2026-04-21T09:00:00.000Z"
+    },
+    {
+      "id": "fix-vac-incomplete",
+      "title": "Placeholder Trainee Without Pay Info",
+      "department": "Kiosk Operations",
+      "location": "Riverside",
+      "salary": "",
+      "type": "Part-time",
+      "role_description": "Intentionally missing salary so the publication filter must drop it from SEO output and counts.",
+      "requirements": [],
+      "responsibilities": [],
+      "created_at": "2026-04-22T09:00:00.000Z",
+      "updated_at": "2026-04-22T09:00:00.000Z"
+    }
+  ],
+  "news_posts": [
+    {
+      "id": "fix-news-neon",
+      "title": "Neon Nights Launch Party",
+      "content": "FIXTURE news body 4821. Join us at the Riverside Quay Kiosk for the fixture-only Neon Nights launch party, a headline announcement that appears in no seed data whatsoever.",
+      "category": "Events",
+      "date": "2026-05-06",
+      "status": "published",
+      "image": "",
+      "tag_color": "#3E7B80",
+      "created_at": "2026-05-05T12:00:00.000Z",
+      "updated_at": "2026-05-05T12:00:00.000Z"
+    },
+    {
+      "id": "fix-news-draft",
+      "title": "Secret Winter Menu Preview",
+      "content": "FIXTURE draft body 4821. This draft must never reach crawler HTML, the sitemap or JSON-LD.",
+      "category": "Menu",
+      "date": "2026-05-07",
+      "status": "draft",
+      "image": "",
+      "tag_color": "#B23A48",
+      "created_at": "2026-05-06T12:00:00.000Z",
+      "updated_at": "2026-05-06T12:00:00.000Z"
+    }
+  ]
+}

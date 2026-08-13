@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "maximumWarnings": 239,
+  "baselineNote": "The audited R4.10 baseline had exactly 239 warnings. The total may only fall; newly extracted launch-critical modules have a zero-warning budget.",
+  "zeroWarningPaths": [
+    "src/components/PublicWebsiteEditBar.tsx",
+    "src/components/admin/BusinessActionDialog.tsx",
+    "src/lib/publicDataValidation.ts",
+    "scripts/small-business-usability.test.mjs",
+    "scripts/lint-ratchet.mjs",
+    "src/lib/operatorMessages.ts",
+    "scripts/founder-readiness.test.mjs",
+    "scripts/deferred-import-reachability.test.mjs"
+  ]
+}

@@ -1,0 +1,95 @@
+# ============================================================================
+#  MILK POP — HTTP security headers  (Block E / WP-03 host contract)
+#
+#  WHAT THIS IS
+#  ------------
+#  Vite copies everything in `public/` into `dist/` verbatim, so this file ships
+#  as `dist/_headers`. That filename is the response-header convention for
+#  **Netlify** and **Cloudflare Pages** — if you deploy to either, these headers
+#  apply automatically with no extra config.
+#
+#  DEPLOYING SOMEWHERE ELSE?  (no host config is committed to this repo)
+#  --------------------------------------------------------------------
+#  Netlify is the SUPPORTED production host for v1 (netlify.toml is committed;
+#  WP-03 decision). This `_headers` file is ignored by hosts that don't read
+#  it — if you must deploy elsewhere, docs/HOSTING.md carries copy-paste
+#  snippets (Vercel / Nginx / Apache). Whichever host serves the site, the
+#  header VALUES below are the single source of truth — keep them identical,
+#  and prove the deployed result with scripts/headers-smoke.live.mjs.
+#
+#  CSP NOTES (read before tightening)
+#  ----------------------------------
+#   • connect-src allows `https://*.supabase.co` and `wss://*.supabase.co` — the
+#     REST API, Storage, Edge Functions and Auth all live under the project
+#     subdomain, and the exact URL is a build-time env var not knowable here. If
+#     you use a CUSTOM Supabase domain, add it to connect-src.
+#   • connect-src also allows Cloudflare Turnstile's verify host is server-side
+#     (in the Edge Function), so the browser only needs the Turnstile *widget*
+#     script/frame from `challenges.cloudflare.com` when CAPTCHA is enabled.
+#   • style-src needs 'unsafe-inline': Vite + Tailwind v4 + the `motion`
+#     animation library inject inline styles at runtime, and React writes inline
+#     `style` attributes. This is expected for this stack. script-src stays
+#     strict ('self') because index.html has no inline scripts — Vite emits
+#     external module scripts only.
+#   • img-src allows data: (favicon + explicitly supported legacy image data),
+#     blob: (local image previews) and `https://*.supabase.co` for the current
+#     Supabase Storage media pipeline. All
+#     seeded artwork ships from this domain (/brand/…), so no third-party
+#     image host is needed or allowed.
+# ============================================================================
+
+/*
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com https://www.youtube.com; manifest-src 'self'; upgrade-insecure-requests
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  X-Permitted-Cross-Domain-Policies: none
+
+# ---------------------------------------------------------------------------
+# ROUTING/SEO: the staff portal and management panel are session-gated app
+# screens, not content. robots.txt no longer Disallows these paths (a
+# Disallow would stop Google from ever fetching them and SEEING the noindex)
+# — these headers plus the runtime <meta name="robots"> are the authoritative
+# noindex mechanism. All four path forms are listed explicitly because bare
+# `/staff` is NOT covered by `/staff/*` on either host.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# CACHING: everything under /assets/ carries a Vite content hash in its
+# filename, so a byte change always changes the URL. That makes `immutable`
+# correct and safe — browsers may reuse these files for a year without a
+# single revalidation request. The app shell deliberately has no custom
+# long-lived Cache-Control rule: Netlify's atomic deploy model invalidates old
+# deploy objects, while these content-hashed assets remain safe to cache.
+# ---------------------------------------------------------------------------
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Build-generated public fallback and SEO evidence use stable filenames. They
+# must follow the active atomic deployment rather than survive as an old
+# browser/CDN object after a release switch. The browser also fetches the
+# fallback with cache: no-store; these headers make the host contract explicit.
+/public-content.json
+  Cache-Control: no-store, max-age=0
+
+/seo-manifest.json
+  Cache-Control: no-store, max-age=0
+
+# The release marker is the authoritative live-version floor. It must never be
+# served from a stale browser or intermediary cache during rollback protection.
+/.well-known/milkpop-release.json
+  Cache-Control: no-store, max-age=0
+
+/staff
+  X-Robots-Tag: noindex, nofollow
+
+/staff/*
+  X-Robots-Tag: noindex, nofollow
+
+/admin
+  X-Robots-Tag: noindex, nofollow
+
+/admin/*
+  X-Robots-Tag: noindex, nofollow

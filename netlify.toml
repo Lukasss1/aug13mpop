@@ -1,0 +1,73 @@
+# ============================================================================
+#  MILK POP — Netlify production host contract (WP-03, Technical Pack v1)
+#
+#  Netlify is the SUPPORTED production host for v1 (pack §WP-03 decision:
+#  one host done properly beats five done vaguely). This file carries build
+#  and routing config ONLY — the security header VALUES live in
+#  public/_headers (shipped as dist/_headers), which stays the single source
+#  of truth so the header set cannot fork between two files.
+#  scripts/headers-smoke.live.mjs asserts the deployed result.
+# ============================================================================
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # OPT-02-C1.3 / Audit #2 finding 1: pin the production Node major to the SAME
+  # version CI verifies on every push (Node 22.23.2 — .github/workflows/security.yml)
+  # and that .nvmrc declares for local shells, so "passed CI" means "builds in
+  # production" and there is a single authoritative runtime. package.json
+  # "engines" requires the exact supported Node 22 security floor; this pins the deployed build to
+  # the continuously-verified baseline.
+  NODE_VERSION = "22.23.2"
+
+# OPT-01.1: the deployment mode is set BY THE PLATFORM, per context, so the
+# build-time validator (scripts/validate-deployment-env.mjs, run via the
+# "prebuild" hook) arms its HARD production rules automatically on production
+# deploys and stays advisory on previews. The validator also independently
+# reads Netlify's own CONTEXT as a fallback, and hard-fails if an explicit
+# mode here ever contradicts a production context — so these three blocks and
+# the platform signal reinforce each other rather than being a single point of
+# failure.
+# OPT-02-C1.2 (SEO source unification): `npm run build` runs the `postbuild`
+# hook (scripts/prerender-seo.ts), which is the step that generates the static
+# crawler pages, sitemap.xml, robots.txt and seo-manifest.json. In a production
+# context that generator reads the PUBLIC content straight from Supabase with
+# the ANON key and FAILS THE BUILD if the pair is missing or unreadable —
+# bundled seed defaults are never a production fallback. Therefore the
+# production environment MUST provide VITE_SUPABASE_URL and VITE_SUPABASE_ANON_
+# KEY (set in the Netlify UI, not here — the anon key is public but still not
+# committed). T13.3.30 deliberately has no SEO hosting deploy hook: public
+# content changes are reflected in the next protected signed release, keeping
+# one production publisher. Production must use the hard production wrapper. Deploy previews keep the
+# ordinary advisory build so reviewers can exercise incomplete feature flags,
+# but a production Git deploy cannot accidentally run with softened validation.
+[context.production]
+  command = "npm run build:production"
+
+[context.production.environment]
+  VITE_DEPLOYMENT_MODE = "production"
+
+[context.deploy-preview.environment]
+  VITE_DEPLOYMENT_MODE = "preview"
+
+[context.branch-deploy.environment]
+  VITE_DEPLOYMENT_MODE = "preview"
+
+# Release marker: before the first signed publication this path must return a
+# genuine 404 so the rollback-floor guard can distinguish "no previous MilkPop
+# release" from a malformed marker. Once the real marker file exists, Netlify
+# file shadowing serves that asset instead because this rule is not forced.
+[[redirects]]
+  from = "/.well-known/milkpop-release.json"
+  to = "/index.html"
+  status = 404
+
+# SPA fallback: every non-file route serves the app shell; the in-app router
+# (src/lib/router.ts) resolves the path. Prerendered SEO pages in dist/ are
+# real files, so they are served directly and never hit this rule.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -1,0 +1,177 @@
+{
+  "__doc__": [
+    "THE PUBLIC CONTRACT \u2014 current opening boundary.",
+    "",
+    "This file declares the anonymous/public relations the browser and the build-time SEO loader may consume.",
+    "scripts/r410-public-contract-reconciliation.mjs rebuilds the migration chain and reconciles this declaration",
+    "against information_schema, actual grants, the loader relation list, and the SEO fixture.",
+    "",
+    "status: 'live'  \u2014 relation exists and is intentionally anonymous-readable.",
+    "status: 'built' \u2014 relation exists but must NOT be anonymous-readable.",
+    "status: 'retired' \u2014 retained only as historical context and ignored by public consumers.",
+    "",
+    "loader_columns_must_match_view: true means the SEO loader must request the complete view projection,",
+    "not merely a subset. This is used for public_site_configuration so saved legal/contact details and",
+    "section visibility flags cannot disappear from static output or the last-known-good snapshot."
+  ],
+  "contract_version": 2,
+  "anon_select_grant_ceiling": 10,
+  "__ceiling_note__": "Current allow-list contains 10 anonymous SELECT relations. T13.3.10 removed the obsolete site_settings base-table grant; public_site_configuration is the only anonymous settings source.",
+  "stale_anon_policies_expected": [
+    "menu_items",
+    "stores"
+  ],
+  "__stale_policy_note__": "Legacy menu/store policies may still name anon while the base-table grants are revoked. The reconciliation suite proves they remain unreadable and fails if this set changes unexpectedly.",
+  "relations": [
+    {
+      "relation": "site_settings",
+      "status": "built",
+      "kind": "table",
+      "fixture_field": null,
+      "note": "T13.3.10 closes the obsolete anonymous compatibility grant. The table remains the guarded write target; all anonymous reads use public_site_configuration.",
+      "forbidden_columns": [
+        "notification_recipient",
+        "updated_by"
+      ],
+      "read_by": "staff"
+    },
+    {
+      "relation": "site_content",
+      "status": "live",
+      "kind": "table",
+      "fixture_field": "site_content",
+      "note": "Editable public copy. Read via RLS, not a projection view.",
+      "forbidden_columns": [
+        "updated_by"
+      ],
+      "read_by": "seo-loader"
+    },
+    {
+      "relation": "menu_items_public",
+      "status": "live",
+      "kind": "view",
+      "fixture_field": "menu_items",
+      "note": "Anonymous menu projection: available rows only. tax_code is deliberately excluded.",
+      "forbidden_columns": [
+        "tax_code",
+        "cost_price",
+        "supplier",
+        "internal_notes"
+      ],
+      "read_by": "seo-loader"
+    },
+    {
+      "relation": "stores_public",
+      "status": "live",
+      "kind": "view",
+      "fixture_field": "stores",
+      "note": "Anonymous locator projection: genuine name/address/postcode rows, including coming-soon locations before POS commissioning. setup_status remains internal and is never exposed. R4.10 added created_at/updated_at for SEO snapshot parity.",
+      "forbidden_columns": [
+        "setup_status",
+        "vat_config_confirmed_at",
+        "vat_scheme",
+        "vat_number",
+        "payment_methods",
+        "timezone",
+        "currency"
+      ],
+      "read_by": "seo-loader"
+    },
+    {
+      "relation": "job_vacancies",
+      "status": "retired",
+      "kind": "table",
+      "fixture_field": null,
+      "note": "Retired anonymous base-table surface. The relation remains the authenticated write target; public reads use job_vacancies_public.",
+      "forbidden_columns": [],
+      "read_by": "client"
+    },
+    {
+      "relation": "news_posts",
+      "status": "retired",
+      "kind": "table",
+      "fixture_field": null,
+      "note": "Retired anonymous base-table surface. The relation remains the authenticated write target; public reads use news_posts_public.",
+      "forbidden_columns": [],
+      "read_by": "client"
+    },
+    {
+      "relation": "deals_public",
+      "status": "live",
+      "kind": "view",
+      "fixture_field": null,
+      "note": "Canonical anonymous active-deals projection. The deals base table is denied to anon.",
+      "forbidden_columns": [],
+      "read_by": "client"
+    },
+    {
+      "relation": "news_posts_public",
+      "status": "live",
+      "kind": "view",
+      "fixture_field": "news_posts",
+      "note": "Canonical anonymous published-news projection. The news_posts base table is denied to anon.",
+      "forbidden_columns": [],
+      "read_by": "seo-loader"
+    },
+    {
+      "relation": "job_vacancies_public",
+      "status": "live",
+      "kind": "view",
+      "fixture_field": "job_vacancies",
+      "note": "Canonical anonymous published-vacancies projection. The job_vacancies base table is denied to anon.",
+      "forbidden_columns": [],
+      "read_by": "seo-loader"
+    },
+    {
+      "relation": "cms_pages_public",
+      "status": "built",
+      "kind": "view",
+      "fixture_field": null,
+      "note": "INC11 retired this anonymous publication surface. The view remains authenticated-readable for staff metadata but anon SELECT is revoked.",
+      "forbidden_columns": [],
+      "read_by": "staff"
+    },
+    {
+      "relation": "media_assets_public",
+      "status": "built",
+      "kind": "view",
+      "fixture_field": null,
+      "note": "INC11 retired this anonymous publication surface. The view remains authenticated-readable for staff metadata but anon SELECT is revoked; public bytes are exposed only through explicit references.",
+      "forbidden_columns": [],
+      "read_by": "staff"
+    },
+    {
+      "relation": "public_site_configuration",
+      "status": "live",
+      "kind": "view",
+      "fixture_field": "site_settings",
+      "note": "Canonical public legal/contact and presentation singleton. The SEO loader must request the complete projection so static output and runtime fallback preserve every saved public setting.",
+      "forbidden_columns": [
+        "enforce_public_gates",
+        "notification_recipient",
+        "vat_state_confirmed",
+        "customer_ack_enabled",
+        "telephone_alternative_ok",
+        "receipt_identity_footer",
+        "updated_by"
+      ],
+      "read_by": "seo-loader",
+      "loader_columns_must_match_view": true
+    }
+  ],
+  "base_tables_that_must_never_be_anon_readable": [
+    "stores",
+    "menu_items",
+    "staff_profiles",
+    "payslips",
+    "work_shifts",
+    "clock_history",
+    "job_applications",
+    "contact_messages",
+    "franchise_inquiries",
+    "launch_settings",
+    "admin_recovery_intents",
+    "payroll_export_batches",
+    "notification_outbox"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "//": "Browser (Vite/React) TypeScript config. Supabase Edge Functions run on Deno and are typechecked separately via supabase/functions/tsconfig.json — they are excluded here so browser-only DOM lib settings don't clash with Deno globals. Phase 1 Check 4: strict is ON (with useUnknownInCatchVariables, noImplicitReturns, noFallthroughCasesInSwitch, allowJs off) so the browser app has the same type baseline as the Edge Functions; the advanced flags exactOptionalPropertyTypes and noUncheckedIndexedAccess are ON as of Stage D. scripts/tsconfig-hygiene.test.mjs enforces these invariants.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "strict": true,
+    "useUnknownInCatchVariables": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": false,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "supabase", "scripts"]
+}

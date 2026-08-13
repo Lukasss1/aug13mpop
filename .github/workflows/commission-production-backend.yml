@@ -1,0 +1,308 @@
+name: Commission Production Backend
+
+on:
+  workflow_dispatch:
+    inputs:
+      database_mode:
+        description: 'verify-only, recover-known-partial (one-time incident recovery), fresh, resume, or upgrade'
+        required: true
+        type: choice
+        options: [verify-only, recover-known-partial, fresh, resume, upgrade]
+        default: verify-only
+      confirm_project_ref:
+        description: 'Type the exact protected production Supabase project ref'
+        required: true
+      confirmation_phrase:
+        description: 'verify-only: VERIFY <ref>; recover: RECOVER KNOWN PARTIAL <ref>; fresh: ERASE AND INSTALL <ref>; resume: RESUME INSTALL <ref>; upgrade: APPLY MIGRATIONS <ref>'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milkpop-production-mutation
+  cancel-in-progress: false
+
+jobs:
+  commission:
+    runs-on: ubuntu-24.04
+    environment: production
+    env:
+      MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22.23.2
+
+      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf
+        with:
+          version: 2.84.2
+
+      - name: Install PostgreSQL 17 tooling
+        run: |
+          bash scripts/install-postgresql-17.sh
+          supabase --version
+
+      - name: Install the exact locked application dependencies
+        run: npm ci
+
+      - name: Run the complete locked source and production-build verification before mutation
+        run: npm run verify
+
+      - name: Validate commissioning source, target and confirmation
+        env:
+          INPUT_REF: ${{ inputs.confirm_project_ref }}
+          PHRASE: ${{ inputs.confirmation_phrase }}
+          MODE: ${{ inputs.database_mode }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SOURCE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          test "$SOURCE_REF" = "refs/heads/main" || { echo 'production commissioning may run only from main'; exit 1; }
+          test "$INPUT_REF" = "$MP_SUPABASE_PROJECT_REF" || { echo 'project ref confirmation mismatch'; exit 1; }
+          test "$SUPABASE_URL" = "https://$MP_SUPABASE_PROJECT_REF.supabase.co" || { echo 'SUPABASE_URL does not match protected project ref'; exit 1; }
+          case "$MODE" in
+            verify-only) EXPECT="VERIFY $MP_SUPABASE_PROJECT_REF" ;;
+            recover-known-partial) EXPECT="RECOVER KNOWN PARTIAL $MP_SUPABASE_PROJECT_REF" ;;
+            fresh) EXPECT="ERASE AND INSTALL $MP_SUPABASE_PROJECT_REF" ;;
+            resume) EXPECT="RESUME INSTALL $MP_SUPABASE_PROJECT_REF" ;;
+            upgrade) EXPECT="APPLY MIGRATIONS $MP_SUPABASE_PROJECT_REF" ;;
+            *) exit 1 ;;
+          esac
+          test "$PHRASE" = "$EXPECT" || { echo 'destructive confirmation phrase mismatch'; exit 1; }
+          mkdir -p artifacts/backend-commissioning
+
+      - name: Verify commissioning tooling and source identity
+        run: |
+          set -euo pipefail
+          node scripts/deployed-acceptance-probe.test.mjs
+          node scripts/commission-database.test.mjs
+          node scripts/verify-supabase-secrets.test.mjs
+          node scripts/validate-production-commissioning-inputs.test.mjs
+          node scripts/backend-commissioning-workflow.test.mjs
+          node scripts/commission-production-schedulers.test.mjs
+          node scripts/write-backend-commissioning-receipt.test.mjs
+          node scripts/seed-honesty.test.mjs
+          node scripts/migration-manifest.test.mjs
+          node scripts/edge-function-inventory.test.mjs
+          node scripts/t13328-production-deployment-closure.test.mjs
+          node scripts/rls-production-smoke.contract.test.mjs
+          node scripts/t13329-deployment-closure.test.mjs
+          node scripts/partial-fresh-recovery.test.mjs
+          CURRENT_SOURCE_SHA="$(node scripts/lib/release-hash.mjs --source .)"
+          MANIFEST_SOURCE_SHA="$(node -e "process.stdout.write(require('./release-manifest.json').source_tree_sha256 || '')")"
+          test -n "$MANIFEST_SOURCE_SHA" || { echo 'release manifest has no source_tree_sha256'; exit 1; }
+          test "$CURRENT_SOURCE_SHA" = "$MANIFEST_SOURCE_SHA" || {
+            echo 'release-manifest.json is stale for this source tree; regenerate the release candidate before production commissioning'
+            exit 1
+          }
+          echo 'SOURCE MANIFEST CURRENT PASS'
+
+      - name: Rehearse the exact database install and ledger path on local PostgreSQL 17
+        if: ${{ inputs.database_mode != 'verify-only' }}
+        run: |
+          set -euo pipefail
+          bash scripts/upgrade-replay.test.sh \
+            | tee artifacts/backend-commissioning/database-rehearsal.log
+
+      - name: Validate protected production commissioning inputs
+        env:
+          MODE: ${{ inputs.database_mode }}
+          MP_SUPABASE_PROJECT_REF: ${{ vars.MP_SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PROBE_USER_EMAIL: ${{ secrets.PROBE_USER_EMAIL }}
+          PROBE_USER_PASSWORD: ${{ secrets.PROBE_USER_PASSWORD }}
+          PRODUCTION_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          PRODUCTION_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          PRODUCTION_OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+          MP_SITE_DOMAIN: ${{ vars.MP_SITE_DOMAIN }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SERVER_ENABLED: ${{ vars.TURNSTILE_SERVER_ENABLED }}
+          TURNSTILE_SECRET_SET: ${{ vars.TURNSTILE_SECRET_SET }}
+          FORM_ALLOWED_ORIGINS_SET: ${{ vars.FORM_ALLOWED_ORIGINS_SET }}
+          CV_ALLOWED_ORIGINS_SET: ${{ vars.CV_ALLOWED_ORIGINS_SET }}
+          EMAIL_ALLOWED_ORIGINS_SET: ${{ vars.EMAIL_ALLOWED_ORIGINS_SET }}
+          NOTIFICATION_RECIPIENT_SET: ${{ vars.NOTIFICATION_RECIPIENT_SET }}
+          VITE_MEDIA_V2: ${{ vars.VITE_MEDIA_V2 }}
+          MEDIA_BACKEND_READY: ${{ vars.MEDIA_BACKEND_READY }}
+        run: node scripts/validate-production-commissioning-inputs.mjs "$MODE"
+
+      - name: Verify production Edge Function secret inventory before database mutation
+        if: ${{ inputs.database_mode != 'recover-known-partial' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          MP_EXPECT_TURNSTILE: ${{ vars.TURNSTILE_SERVER_ENABLED }}
+        run: |
+          set -euo pipefail
+          supabase secrets list --project-ref "$MP_SUPABASE_PROJECT_REF" --output json > /tmp/supabase-secrets.json
+          node scripts/verify-supabase-secrets.mjs /tmp/supabase-secrets.json \
+            | tee artifacts/backend-commissioning/secret-inventory.log
+          rm -f /tmp/supabase-secrets.json
+
+      - name: Record recovery-only Edge Function secret non-check
+        if: ${{ inputs.database_mode == 'recover-known-partial' }}
+        run: |
+          echo 'SUPABASE SECRET INVENTORY SKIPPED RECOVERY ONLY — database-only incident recovery does not deploy or invoke Edge Functions' \
+            | tee artifacts/backend-commissioning/secret-inventory.log
+
+      - name: Apply or verify the database ledger
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          MP_CONFIRM_PROJECT_REF: ${{ inputs.confirm_project_ref }}
+          MP_COMMISSION_CONFIRMATION: ${{ inputs.confirmation_phrase }}
+          MODE: ${{ inputs.database_mode }}
+        run: |
+          set -euo pipefail
+          LOG=artifacts/backend-commissioning/database-commission.log
+          if [ "$MODE" = verify-only ]; then
+            echo 'DATABASE_VERIFY_ONLY' | tee "$LOG"
+          else
+            bash scripts/commission-database.sh "$MODE" 2>&1 | tee "$LOG"
+            echo "DATABASE_COMMISSION_PASS mode=$MODE" | tee -a "$LOG"
+          fi
+
+      - name: Deploy the 14 public website and staff Edge Functions
+        if: ${{ inputs.database_mode != 'verify-only' && inputs.database_mode != 'recover-known-partial' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash launch/deploy-public-functions.sh 2>&1 \
+            | tee artifacts/backend-commissioning/function-deploy.log
+
+      - name: Record recovery-only function non-mutation
+        if: ${{ inputs.database_mode == 'recover-known-partial' }}
+        run: |
+          echo 'FUNCTION_DEPLOY_SKIPPED_RECOVERY_ONLY — recovery changes only the known partial database baseline' \
+            | tee artifacts/backend-commissioning/function-deploy.log
+
+      - name: Record verify-only function inventory without claiming source parity
+        if: ${{ inputs.database_mode == 'verify-only' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          supabase functions list --project-ref "$MP_SUPABASE_PROJECT_REF" 2>&1 \
+            | tee artifacts/backend-commissioning/function-deploy.log
+          echo 'FUNCTION_SOURCE_NOT_VERIFIED (verify-only does not redeploy functions)' \
+            | tee -a artifacts/backend-commissioning/function-deploy.log
+
+      - name: Commission production schedulers and establish fresh heartbeats
+        if: ${{ inputs.database_mode != 'verify-only' && inputs.database_mode != 'recover-known-partial' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node scripts/commission-production-schedulers.mjs 2>&1 \
+            | tee artifacts/backend-commissioning/scheduler-commission.log
+
+      - name: Record recovery-only scheduler non-mutation
+        if: ${{ inputs.database_mode == 'recover-known-partial' }}
+        run: |
+          echo 'SCHEDULER_SKIPPED_RECOVERY_ONLY — recovery does not mutate scheduler configuration' \
+            | tee artifacts/backend-commissioning/scheduler-commission.log
+
+      - name: Record verify-only scheduler state without recommissioning
+        if: ${{ inputs.database_mode == 'verify-only' }}
+        run: |
+          echo 'SCHEDULER_VERIFY_ONLY_NOT_COMMISSIONED' \
+            | tee artifacts/backend-commissioning/scheduler-commission.log
+
+      - name: Record recovery-only stop
+        if: ${{ inputs.database_mode == 'recover-known-partial' }}
+        run: |
+          set -euo pipefail
+          for log in deployed-acceptance rls-live public-form-live turnstile-live edge-cors-live email-delivery-live outbox-delivery-live; do
+            printf '%s\n' 'RECOVERY_ONLY — known partial baseline removed; no functions, schedulers or live acceptance were mutated/run. Run fresh next.' \
+              | tee "artifacts/backend-commissioning/${log}.log"
+          done
+          echo 'KNOWN PARTIAL RECOVERY COMPLETE — RUN FRESH'
+
+      - name: Record first-install bootstrap requirement
+        if: ${{ inputs.database_mode == 'fresh' || inputs.database_mode == 'resume' }}
+        run: |
+          set -euo pipefail
+          for log in deployed-acceptance rls-live public-form-live turnstile-live edge-cors-live email-delivery-live outbox-delivery-live; do
+            printf '%s\n' 'BOOTSTRAP_REQUIRED — backend install completed/resumed; create owner/store/MFA, one low-role acceptance user and publish form/e-mail configuration, then run upgrade for full live verification.' \
+              | tee "artifacts/backend-commissioning/${log}.log"
+          done
+          echo 'BACKEND INSTALL COMPLETE — OWNER SETUP REQUIRED'
+
+      - name: Exact deployed database and low-role API acceptance
+        if: ${{ inputs.database_mode != 'fresh' && inputs.database_mode != 'resume' && inputs.database_mode != 'recover-known-partial' }}
+        env:
+          MP_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          MP_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          MP_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          MP_PROBE_EMAIL: ${{ secrets.PROBE_USER_EMAIL }}
+          MP_PROBE_PASSWORD: ${{ secrets.PROBE_USER_PASSWORD }}
+          MP_MANIFEST: release-manifest.json
+        run: node scripts/deployed-acceptance-probe.mjs 2>&1 | tee artifacts/backend-commissioning/deployed-acceptance.log
+
+      - name: Live production RLS smoke for the real first-store topology
+        if: ${{ inputs.database_mode != 'fresh' && inputs.database_mode != 'resume' && inputs.database_mode != 'recover-known-partial' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          OWNER_PW: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          OWNER_TOTP_SECRET: ${{ secrets.PRODUCTION_OWNER_TOTP_SECRET }}
+          STAFF_EMAIL: ${{ secrets.PROBE_USER_EMAIL }}
+          STAFF_PW: ${{ secrets.PROBE_USER_PASSWORD }}
+        run: node scripts/rls-production-smoke.mjs 2>&1 | tee artifacts/backend-commissioning/rls-live.log
+
+      - name: Public forms, Turnstile, CORS, direct email and durable outbox delivery live gates
+        if: ${{ inputs.database_mode != 'fresh' && inputs.database_mode != 'resume' && inputs.database_mode != 'recover-known-partial' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
+          MP_EXPECTED_ORIGIN: https://${{ vars.MP_SITE_DOMAIN }}
+          PRODUCTION_OWNER_EMAIL: ${{ secrets.PRODUCTION_OWNER_EMAIL }}
+          PRODUCTION_OWNER_PASSWORD: ${{ secrets.PRODUCTION_OWNER_PASSWORD }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node scripts/public-form-rejection.live.mjs 2>&1 | tee artifacts/backend-commissioning/public-form-live.log
+          node scripts/turnstile-pairing.live.mjs 2>&1 | tee artifacts/backend-commissioning/turnstile-live.log
+          node scripts/edge-cors.live.mjs 2>&1 | tee artifacts/backend-commissioning/edge-cors-live.log
+          node scripts/email-delivery.live.mjs 2>&1 | tee artifacts/backend-commissioning/email-delivery-live.log
+          node scripts/outbox-delivery.live.mjs 2>&1 | tee artifacts/backend-commissioning/outbox-delivery-live.log
+
+      - name: Write backend commissioning receipt
+        env:
+          MP_DATABASE_MODE: ${{ inputs.database_mode }}
+          MP_GIT_COMMIT: ${{ github.sha }}
+          MP_MANIFEST: release-manifest.json
+        run: |
+          node scripts/write-backend-commissioning-receipt.mjs \
+            artifacts/backend-commissioning/backend-commissioning-receipt.json \
+            artifacts/backend-commissioning/database-commission.log \
+            artifacts/backend-commissioning/secret-inventory.log \
+            artifacts/backend-commissioning/function-deploy.log \
+            artifacts/backend-commissioning/scheduler-commission.log \
+            artifacts/backend-commissioning/deployed-acceptance.log \
+            artifacts/backend-commissioning/rls-live.log \
+            artifacts/backend-commissioning/public-form-live.log \
+            artifacts/backend-commissioning/turnstile-live.log \
+            artifacts/backend-commissioning/edge-cors-live.log \
+            artifacts/backend-commissioning/email-delivery-live.log \
+            artifacts/backend-commissioning/outbox-delivery-live.log
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: milkpop-backend-commissioning-${{ github.run_number }}
+          path: artifacts/backend-commissioning/
+          if-no-files-found: error

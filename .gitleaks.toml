@@ -1,0 +1,70 @@
+# ============================================================================
+# Gitleaks configuration — Milk Pop
+#
+# Run locally:   gitleaks detect --source . --config .gitleaks.toml
+# Run in CI:     see .github/workflows/security.yml
+#
+# Extends the gitleaks default ruleset (AWS, GitHub, Stripe, Slack, generic
+# API keys, private keys, JWTs, …) and adds project-specific rules for the
+# exact credential patterns this codebase leaked in the past, so they can
+# never quietly come back.
+# ============================================================================
+
+title = "Milk Pop secret scanning"
+
+[extend]
+useDefault = true
+
+# ----------------------------------------------------------------------------
+# Project-specific rules
+# ----------------------------------------------------------------------------
+
+[[rules]]
+id = "milkpop-historic-owner-password"
+description = "Historic hard-coded owner password (removed in the July 2026 lockdown) reappearing"
+regex = '''(?i)(password|passcode|pin)['"]?\s*[:=]\s*['"]123123['"]'''
+keywords = ["123123"]
+
+[[rules]]
+id = "milkpop-historic-temp-pin"
+description = "Historic hard-coded temporary staff PIN (removed in the July 2026 lockdown) reappearing"
+regex = '''(?i)temp1234'''
+keywords = ["temp1234"]
+
+[[rules]]
+id = "milkpop-hardcoded-password-literal"
+description = "Any hard-coded password/PIN/secret literal in source"
+regex = '''(?i)(password|passwd|passcode|secret|api[_-]?key|auth[_-]?token)['"]?\s*[:=]\s*['"][^'"\n]{4,}['"]'''
+path = '''(src|supabase)/.*\.(ts|tsx|js|jsx|sql)$'''
+
+[[rules]]
+id = "milkpop-supabase-service-role"
+description = "Supabase service-role key or reference in client code (must live server-side only)"
+regex = '''(?i)service[_-]?role'''
+path = '''src/.*'''
+
+[[rules]]
+id = "milkpop-resend-key"
+description = "Resend API key committed to the repository"
+regex = '''re_[A-Za-z0-9]{16,}'''
+
+[[rules]]
+id = "milkpop-supabase-jwt"
+description = "Supabase JWT (anon or service key) committed to the repository — keys belong in .env only"
+regex = '''eyJhbGciOiJIUzI1NiI[sInR5cCI6IkpXVCJ9A-Za-z0-9._-]{20,}'''
+
+# ----------------------------------------------------------------------------
+# Allowlist — placeholders and documentation that must not trip the scan.
+# ----------------------------------------------------------------------------
+[allowlist]
+description = "Placeholders, UI copy and docs"
+regexes = [
+  # The masked input placeholder shown in the Admin Panel UI
+  '''placeholder="eyJhbGciOi…"''',
+  # Env var NAMES (no values) referenced in docs and the Edge Function
+  '''RESEND_API_KEY(?!\s*[:=]\s*['"][A-Za-z0-9])''',
+]
+paths = [
+  '''.gitleaks.toml''',
+  '''package-lock.json''',
+]

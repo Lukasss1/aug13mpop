@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# Secrets & local configuration — never commit these.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local
+supabase/.env
+supabase/functions/**/.env
+
+# Private keys, certificates, credential stores
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa*
+id_ed25519*
+*credentials*.json
+*service-account*.json
+*service_account*.json
+.netrc
+.npmrc
+
+# ---------------------------------------------------------------------------
+# Dependencies & build output
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+build/
+coverage/
+.cache/
+.vite/
+
+# ---------------------------------------------------------------------------
+# Editor / OS noise
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Generated release, test and recovery evidence
+# ---------------------------------------------------------------------------
+release-out/
+artifacts/
+backups/
+milkpop-backup-*/
+restore-report-*.md
+restore-report-*.json
+storage-restore-report-*.json
+complete-backup-acceptance*.json
+supabase/.temp/
