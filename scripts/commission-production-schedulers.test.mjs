@@ -17,6 +17,7 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address()
 // mapping that hostname to the local mock through NODE_OPTIONS is inappropriate,
 // so test the SQL/secret boundary using a tiny source copy with the URL guard
 // replaced only inside this temporary test process.
+// eslint-disable-next-line no-useless-escape -- this string matches regex source text byte-for-byte.
 const source=readFileSync('scripts/commission-production-schedulers.mjs','utf8').replace("if (!/^https:\\\/\\\\/[a-z0-9]{20}\\\\.supabase\\\\.co$/.test(projectUrl)) {","if (false) {");
 mkdirSync(join(dir,'lib'),{recursive:true}); copyFileSync('scripts/lib/supabase-db-target.mjs',join(dir,'lib/supabase-db-target.mjs'));
 const runner=join(dir,'runner.mjs');writeFileSync(runner,source.replace("await fetch(`${projectUrl}/functions/v1/outbox-dispatch`",`await fetch('http://127.0.0.1:${port}/functions/v1/outbox-dispatch'`));

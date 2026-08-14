@@ -90,6 +90,7 @@ export function safeMailtoHref(value: unknown): string | undefined {
  *  editable content bypass the render-time URL boundary. */
 export function safePolicyHref(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
+  // eslint-disable-next-line no-control-regex -- rejecting ASCII control bytes is intentional input hardening.
   if (/[\\\u0000-\u001F\u007F]/.test(value)) return undefined;
   const raw = value.trim();
   if (!raw) return undefined;

@@ -39,9 +39,9 @@ const path = () => new URL(page.url()).pathname + new URL(page.url()).search;
    article route is exercised in step 10, which reads publishedCounts from the
    served seo-manifest and only follows an article when one actually exists. */
 const ROUTES = [
-  '/', '/menu/', '/stores/', '/careers/', '/franchise/', '/about/', '/contact/', '/news/',
-  '/privacy/', '/gdpr/', '/fdd/',
+  '/', '/menu/', '/stores/', '/about/', '/contact/', '/privacy/', '/gdpr/',
 ];
+const DISABLED_OPTIONAL_ROUTES = ['/careers/', '/franchise/', '/news/', '/fdd/'];
 for (const route of ROUTES) {
   const errBefore = consoleErrors.length;
   await page.goto(BASE + route, { waitUntil: 'networkidle' });
@@ -74,7 +74,7 @@ for (const route of ROUTES) {
 /* ---- 3. Every internal link on every public page resolves ---- */
 const KNOWN = new Set(ROUTES.concat(['/staff/', '/staff/login/', '/admin/']));
 const badLinks = [];
-for (const route of ['/', '/menu/', '/stores/', '/careers/', '/news/', '/about/', '/contact/', '/franchise/']) {
+for (const route of ['/', '/menu/', '/stores/', '/about/', '/contact/']) {
   await page.goto(BASE + route, { waitUntil: 'networkidle' });
   await settle(400);
   const hrefs = await page.$$eval('a[href]', (as) => as.map((a) => a.getAttribute('href')));
@@ -111,25 +111,21 @@ ok('hero CTA "Find a Store" → /stores/', path() === '/stores/', path());
 await page.goto(BASE + '/stores/', { waitUntil: 'networkidle' });
 await settle(600);
 const storesText = (await page.textContent('body')) || '';
-ok('store locator shows coming-soon empty state (no placeholder cards)',
-  /coming soon/i.test(storesText) && !/Milk Pop Solihull|Milk Pop Leicester|Milk Pop Birmingham/.test(storesText),
+ok('store locator shows the backend-outage state, not a fabricated empty business state',
+  /temporarily unavailable/i.test(storesText)
+  && !/coming soon|Milk Pop Solihull|Milk Pop Leicester|Milk Pop Birmingham/i.test(storesText),
   storesText.trim().slice(0, 60));
 
-/* ---- 7. Careers: honest no-open-roles empty state (no seeded vacancies) ---- */
-await page.goto(BASE + '/careers/', { waitUntil: 'networkidle' });
-await settle(600);
-const careersText = (await page.textContent('body')) || '';
-/* SMALL-BIZ CLOSURE P0-7 repoint (see scripts/routing-smoke.test.mjs step 4 for
-   the full reasoning). This audit runs against a build with NO backend, so
-   every public collection is UNAVAILABLE. "No Open Roles" / "no news yet" /
-   "Coming Soon" are claims about the BUSINESS and may render only when the
-   collection genuinely loaded and was empty; an outage now says so instead.
-   Asserting the outage state AND the absence of the false claim is strictly
-   stronger than the original assertion. */
-ok('careers shows the OUTAGE state, not a false no-open-roles claim',
-  /temporarily unavailable/i.test(careersText) && !/no open roles/i.test(careersText)
-  && !/Hospitality Team Member|Shift Supervisor/.test(careersText),
-  careersText.trim().slice(0, 60));
+/* ---- 7. Optional programmes are unpublished by default and fail closed ---- */
+for (const route of DISABLED_OPTIONAL_ROUTES) {
+  await page.goto(BASE + route, { waitUntil: 'networkidle' });
+  await settle(500);
+  const optionalBody = (await page.textContent('body')) || '';
+  ok(`disabled optional route ${route} renders not-found`,
+    /couldn.t find that page|404/i.test(optionalBody), optionalBody.trim().slice(0, 60));
+  ok(`disabled optional route ${route} is noindex`,
+    /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
+}
 
 /* ---- 8. Forms fail CLOSED without a backend (no fake success, no crash) ---- */
 // The app's honest fail-closed toast for an unconfigured backend:
@@ -180,31 +176,9 @@ ok('menu fails closed with no database (no seed catalogue)',
 const search = page.locator('input[placeholder*="earch"]').first();
 if (await search.count()) { await search.fill(''); await settle(200); }
 
-/* ---- 10. News: empty archive, or article + back link when news exists.
-        R4.10 Increment 2 removed the fabricated 'Welcome to Milk Pop' fallback
-        this step used to depend on. The article round-trip is still asserted,
-        but only when there is an article to open — otherwise the honest empty
-        archive is what must be shown. ---- */
-await page.goto(BASE + '/news/', { waitUntil: 'networkidle' });
-await settle(500);
-const newsArticleLinks = await page.locator('text=Read Article').count();
-if (newsArticleLinks === 0) {
-  const emptyNews = (await page.textContent('body')) || '';
-  /* SMALL-BIZ CLOSURE P0-7 repoint: "There is no news yet" is a claim about the
-     business — valid only when the archive genuinely loaded and was empty. This
-     backendless build is an outage and must say so. */
-  ok('news shows the OUTAGE state, not a false empty archive',
-    /temporarily unavailable/i.test(emptyNews) && !/no news yet/i.test(emptyNews),
-    emptyNews.trim().slice(0, 70));
-  ok('no fabricated article is published', !/welcome to milk pop/i.test(emptyNews));
-} else {
-  await page.locator('text=Read Article').first().click();
-  await settle();
-  ok('news read article navigates', /^\/news\/[a-z0-9-]+\/$/.test(path()), path());
-  await page.locator('text=All news').first().click();
-  await settle();
-  ok('article back link returns to /news/', path() === '/news/', path());
-}
+/* ---- 10. Optional News is already covered by the publication-switch gate.
+ * Real published-news round trips are exercised in the Supabase-sourced SEO
+ * and fail-closed browser suites, where a real fixture enables the programme. ---- */
 
 /* ---- 11. Junk paths: page-level + detail-level ---- */
 await page.goto(BASE + '/definitely-not-a-page', { waitUntil: 'networkidle' });
@@ -226,14 +200,22 @@ ok('junk path KEEPS its URL', path() === '/definitely-not-a-page', path());
    provide is kept and asserted directly: the slug is NOINDEX and canonicalises
    to the LIST route, never to itself, so it can never become an indexable
    self-canonical 200. */
-for (const junk of ['/stores/xxx-junk', '/careers/xxx-junk', '/news/xxx-junk']) {
+for (const junk of ['/stores/xxx-junk']) {
   await page.goto(BASE + junk, { waitUntil: 'networkidle' });
   await settle(800);
-  const list = '/' + junk.split('/')[1] + '/';
   const robots = await page.getAttribute('meta[name="robots"]', 'content') || '';
   const canonical = await page.getAttribute('link[rel="canonical"]', 'href') || '';
   ok(`junk detail ${junk} is noindex under an outage`, /noindex/i.test(robots), robots || 'no robots meta');
-  ok(`junk detail ${junk} canonicalises to ${list}`, canonical.endsWith(list), canonical || 'no canonical');
+  ok(`junk detail ${junk} canonicalises to /stores/`, canonical.endsWith('/stores/'), canonical || 'no canonical');
+}
+for (const junk of ['/careers/xxx-junk', '/news/xxx-junk']) {
+  await page.goto(BASE + junk, { waitUntil: 'networkidle' });
+  await settle(500);
+  const optionalBody = (await page.textContent('body')) || '';
+  ok(`junk detail under disabled programme ${junk} stays fail-closed`,
+    /couldn.t find that page|404/i.test(optionalBody));
+  ok(`junk detail under disabled programme ${junk} is noindex`,
+    /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
 }
 
 /* ---- 12. Mobile pass (iPhone 12-ish) ---- */
@@ -248,7 +230,7 @@ await mob.waitForTimeout(400);
 await mob.locator('a[href="/menu/"]:visible').first().click();
 await mob.waitForTimeout(700);
 ok('mobile: nav reaches /menu/', new URL(mob.url()).pathname === '/menu/', new URL(mob.url()).pathname);
-for (const r of ['/stores/', '/careers/', '/about/', '/contact/', '/news/']) {
+for (const r of ['/stores/', '/about/', '/contact/']) {
   await mob.goto(BASE + r, { waitUntil: 'networkidle' });
   await mob.waitForTimeout(500);
   const h = (await mob.locator('h1, h2').first().textContent().catch(() => '')) || '';

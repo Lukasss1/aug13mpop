@@ -32,7 +32,7 @@ const settle = (ms = 500) => page.waitForTimeout(ms);
 
 /* ---- 1. Nav clicks write URLs ---- */
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-for (const key of ['menu', 'stores', 'careers', 'about', 'contact']) {
+for (const key of ['menu', 'stores', 'about', 'contact']) {
   await page.locator(`#nav-${key}`).click();
   await settle();
   ok(`navbar → /${key}/ in address bar`, path() === `/${key}/`, path());
@@ -42,12 +42,11 @@ for (const key of ['menu', 'stores', 'careers', 'about', 'contact']) {
 await page.goBack(); await settle();
 ok('back → /about/', path() === '/about/', path());
 await page.goBack(); await settle();
-ok('back → /careers/', path() === '/careers/', path());
+ok('back → /stores/', path() === '/stores/', path());
 
 /* ---- 3. Deep links (served by SPA fallback or prerendered file) ---- */
 const deepLinks = [
   ['/menu', 'Milk Pop Menu'],
-  ['/careers', 'Join the Team'],
   ['/privacy', 'Privacy Policy'],
   ['/gdpr', 'UK GDPR Consent Policy'],
 ];
@@ -61,8 +60,9 @@ for (const [route, heading] of deepLinks) {
 await page.goto(BASE + '/stores', { waitUntil: 'networkidle' });
 await settle(700);
 const storesBody = (await page.textContent('body')) || '';
-ok('store locator shows the coming-soon empty state',
-  /coming soon/i.test(storesBody) && !/Milk Pop Solihull|Milk Pop Leicester|Milk Pop Birmingham/.test(storesBody),
+ok('store locator shows the OUTAGE state when the backend is absent',
+  /temporarily unavailable/i.test(storesBody)
+    && !/Milk Pop Solihull|Milk Pop Leicester|Milk Pop Birmingham|coming soon/i.test(storesBody),
   storesBody.trim().slice(0, 60));
 /* SMALL-BIZ CLOSURE P0-7 repoint. This preview build has NO backend, so every
    public collection resolves to `unavailable` — a technical outage, not an
@@ -83,52 +83,26 @@ ok('…and shows the outage note, never a fabricated store',
   /temporarily unavailable/i.test((await page.textContent('body')) || ''),
   ((await page.textContent('body')) || '').trim().slice(0, 80));
 
-/* ---- 5. Careers: honest "no open roles" empty state (no seeded vacancies) ---- */
+/* ---- 5. Careers: publication switch fails closed by default. ---- */
 await page.goto(BASE + '/careers', { waitUntil: 'networkidle' });
 await settle(700);
 const careersBody = (await page.textContent('body')) || '';
-/* SMALL-BIZ CLOSURE P0-7 repoint: with no backend the vacancies collection is
-   UNAVAILABLE, and telling candidates "No Open Roles" would state a business
-   fact the site cannot know. The marketing empty state is now reserved for a
-   collection that genuinely answered with zero vacancies; an outage says so.
-   Asserting the outage note AND the absence of the false claim is strictly
-   stronger than the original assertion. */
-ok('careers shows the OUTAGE state, not a false "no open roles" claim',
-  /temporarily unavailable/i.test(careersBody) && !/no open roles/i.test(careersBody)
-  && !/Hospitality Team Member|Shift Supervisor/.test(careersBody),
+ok('disabled careers route renders the not-published 404, never vacancy content',
+  /couldn.t find that page|404/i.test(careersBody)
+  && !/Hospitality Team Member|Shift Supervisor|no open roles/i.test(careersBody),
   careersBody.trim().slice(0, 60));
+ok('disabled careers route is noindex',
+  /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
 
-/* ---- 6. News: the article route still works, but the SEED ARTICLE IS GONE.
-        R4.10 Increment 2 removed FALLBACK_NEWS_POSTS — the fabricated
-        'Welcome to Milk Pop' post that this step used to click through. A build
-        with no published news must show an honest empty archive, so that is what
-        is asserted here. The article-detail path is still exercised, but only
-        when an article actually exists, so this step keeps working unchanged
-        once real news is published. ---- */
+/* ---- 6. News: publication switch fails closed by default. ---- */
 await page.goto(BASE + '/news', { waitUntil: 'networkidle' });
 await settle(700);
 const newsBody = (await page.textContent('body')) || '';
-const articleLinks = await page.locator('text=Read Article').count();
-
-if (articleLinks === 0) {
-  /* SMALL-BIZ CLOSURE P0-7 repoint: same rule — "There is no news yet" is a
-     claim about the business, valid only when the archive genuinely loaded
-     and was empty. A backendless preview is an outage and must say so. */
-  ok('news shows the OUTAGE state, not a false empty archive',
-    /temporarily unavailable/i.test(newsBody) && !/no news yet/i.test(newsBody),
-    newsBody.trim().slice(0, 80));
-  ok('news publishes no fabricated article',
-    !/welcome to milk pop/i.test(newsBody), 'a seed article is being rendered');
-} else {
-  await page.locator('text=Read Article').first().click();
-  await settle();
-  ok('read article → /news/<slug>/', /^\/news\/[a-z0-9-]+\/$/.test(path()), path());
-  const backLink = await page.locator('text=All news').isVisible();
-  ok('article view shows back link', backLink);
-  const articleCanonical = await page.locator('link[rel="canonical"]').getAttribute('href');
-  ok('news canonical matches the article URL',
-    (articleCanonical || '').includes('/news/'), articleCanonical || 'missing');
-}
+ok('disabled news route renders the not-published 404, never seed content',
+  /couldn.t find that page|404/i.test(newsBody) && !/welcome to milk pop/i.test(newsBody),
+  newsBody.trim().slice(0, 80));
+ok('disabled news route is noindex',
+  /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
 
 /* ---- 7. Menu filters as shareable query params ---- */
 await page.goto(BASE + '/menu', { waitUntil: 'networkidle' });
@@ -164,13 +138,11 @@ ok('not-found offers a route onward', /back to home/i.test(nfBody) && /contact/i
 
 /* ---- 8b. Every real public route still loads on a COLD, DIRECT hit ----
  * The risk of an explicit not-found route is that a genuine route falls
- * through to it. Sampling is not enough: assert all twelve. */
+ * through to it. Sampling is not enough: assert every always-published route. */
 for (const [route, marker] of [
   ['/', /Sip\s*.?\s*Smile\s*.?\s*Enjoy/i], ['/menu/', /menu/i], ['/stores/', /store/i],
-  ['/careers/', /career|join the team/i], ['/franchise/', /franchise/i],
-  ['/about/', /about|our story/i], ['/contact/', /contact/i], ['/news/', /news/i],
-  ['/privacy/', /privacy/i],
-  ['/gdpr/', /gdpr|your data/i], ['/fdd/', /fdd|disclosure/i],
+  ['/about/', /about|our story/i], ['/contact/', /contact/i],
+  ['/privacy/', /privacy/i], ['/gdpr/', /gdpr|your data/i],
 ]) {
   await page.goto(BASE + route, { waitUntil: 'networkidle' });
   await settle();
@@ -182,6 +154,15 @@ for (const [route, marker] of [
   const body = (await page.textContent('body')) || '';
   ok(`cold load ${route} is NOT the not-found view`, !/couldn.t find that page/i.test(body));
   ok(`cold load ${route} renders its own content`, marker.test(body), body.slice(0, 60));
+}
+
+for (const route of ['/careers/', '/franchise/', '/news/', '/fdd/']) {
+  await page.goto(BASE + route, { waitUntil: 'networkidle' });
+  await settle();
+  const body = (await page.textContent('body')) || '';
+  ok(`disabled optional route ${route} fails closed`, /couldn.t find that page|404/i.test(body), body.slice(0, 60));
+  ok(`disabled optional route ${route} is noindex`,
+    /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
 }
 
 /* ---- 9. Guests: staff/admin deep links fail closed ---- */
@@ -219,20 +200,20 @@ const published = seoManifest.publishedCounts || {};
 const HAS_NEWS = (published.newsPosts || 0) > 0;
 const HAS_MENU = (published.menuItems || 0) > 0;
 
-if (HAS_NEWS) {
-  const newsHtml = await (await page.request.get(BASE + '/news/welcome-to-milk-pop/')).text();
-  ok('news page carries NewsArticle JSON-LD', newsHtml.includes('"@type":"NewsArticle"'));
-  const newsCanonical = (newsHtml.match(/rel="canonical" href="([^"]+)"/) || [])[1] || '';
-  ok('news page canonical is the slashed path', newsCanonical.endsWith('/news/welcome-to-milk-pop/'), newsCanonical);
-  ok('sitemap lists the news detail page', sitemapText.includes('/news/welcome-to-milk-pop/</loc>'));
-} else {
-  ok('no news detail page is published when nothing is published',
-    (await page.request.get(BASE + '/news/welcome-to-milk-pop/')).status() === 404
-      || !(await (await page.request.get(BASE + '/news/welcome-to-milk-pop/')).text()).includes('"@type":"NewsArticle"'));
-  ok('the sitemap advertises no news detail URL',
-    !/\/news\/[a-z0-9-]+\/<\/loc>/.test(sitemapText), 'a seed news URL is listed');
-}
 const locs = [...sitemapText.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+const firstNewsDetail = locs.find((loc) => /\/news\/[^/]+\/$/.test(new URL(loc).pathname));
+if (HAS_NEWS) {
+  ok('published news count has a matching sitemap detail URL', !!firstNewsDetail, `${published.newsPosts || 0} published`);
+  if (firstNewsDetail) {
+    const newsPath = new URL(firstNewsDetail).pathname;
+    const newsHtml = await (await page.request.get(BASE + newsPath)).text();
+    ok('published news page carries NewsArticle JSON-LD', newsHtml.includes('"@type":"NewsArticle"'));
+    const newsCanonical = (newsHtml.match(/rel="canonical" href="([^"]+)"/) || [])[1] || '';
+    ok('published news page canonical is its slashed sitemap path', newsCanonical.endsWith(newsPath), newsCanonical);
+  }
+} else {
+  ok('the sitemap advertises no news detail URL', !firstNewsDetail, firstNewsDetail || 'clean');
+}
 ok('every sitemap <loc> ends with /', locs.length > 0 && locs.every((l) => l.endsWith('/')), locs.find((l) => !l.endsWith('/')) || `${locs.length} URLs`);
 
 /* ---- 12. Unknown detail slug: bounce when READY, noindex when not ----
@@ -277,8 +258,11 @@ ok('font preloads are limited to the two above-the-fold weights',
 ok('home carries a noscript fallback', /<noscript>[\s\S]*<\/noscript>/.test(homeHtml));
 ok('noscript fallback names the page', /<noscript>[\s\S]*<h1[^>]*>Milk Pop[\s\S]*<\/noscript>/.test(homeHtml));
 ok('noscript fallback links every public route',
-  ['/menu/', '/stores/', '/about/', '/careers/', '/franchise/', '/news/', '/contact/', '/privacy/', '/gdpr/']
+  ['/menu/', '/stores/', '/about/', '/contact/', '/privacy/', '/gdpr/']
     .every((href) => new RegExp(`<noscript>[\\s\\S]*href="${href}"[\\s\\S]*</noscript>`).test(homeHtml)));
+ok('noscript fallback omits disabled optional routes',
+  ['/careers/', '/franchise/', '/news/', '/fdd/']
+    .every((href) => !new RegExp(`<noscript>[\\s\\S]*href="${href}"[\\s\\S]*</noscript>`).test(homeHtml)));
 ok('noscript body is page-specific, not the generic shell copy',
   /<noscript>[\s\S]*<h1[^>]*>Menu \| Milk Pop<\/h1>[\s\S]*<\/noscript>/.test(menuHtml));
 ok('noscript text is escaped exactly once (no &amp;amp;)', !homeHtml.includes('&amp;amp;'));

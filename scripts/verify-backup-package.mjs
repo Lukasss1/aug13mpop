@@ -51,7 +51,7 @@ async function walkPackage(root) {
 }
 
 function parseChecksumLine(text, expectedName) {
-  const match = String(text).trim().match(/^([0-9a-f]{64})  (.+)$/);
+  const match = String(text).trim().match(/^([0-9a-f]{64}) {2}(.+)$/);
   if (!match || match[2] !== expectedName) fail(`invalid checksum file for ${expectedName}`);
   return match[1];
 }

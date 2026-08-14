@@ -71,8 +71,9 @@ export async function readBoundedFormData(req: Request, maxBytes: number): Promi
   if (!contentType.toLowerCase().startsWith('multipart/form-data')) throw new RequestBodyError(415, 'Expected a multipart upload.');
   const bytes = await readBoundedBytes(req, maxBytes);
   try {
+    const body = Uint8Array.from(bytes).buffer;
     const buffered = new Request('https://local.invalid/upload', {
-      method: 'POST', headers: { 'content-type': contentType, 'content-length': String(bytes.byteLength) }, body: bytes,
+      method: 'POST', headers: { 'content-type': contentType, 'content-length': String(bytes.byteLength) }, body,
     });
     return await buffered.formData();
   } catch { throw new RequestBodyError(400, 'Invalid upload.'); }

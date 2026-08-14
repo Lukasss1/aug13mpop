@@ -102,7 +102,7 @@ for (const tbl of ['site_settings', 'news_posts', 'media_assets', 'cms_pages', '
 /* Reserved domains: no UI section may exist AND no browser policy may exist. */
 for (const tbl of ['customers', 'loyalty_transactions', 'ingredients', 'stock_movements']) {
   check(`RESERVED: '${tbl}' has no browser policies and no admin section`,
-    noPolicies(tbl) && !new RegExp(`(?:id: |^\s*)'?'${tbl}'?`).test(admNav) && !new RegExp(`id: '${tbl}'`).test(adm),
+    noPolicies(tbl) && !new RegExp(`(?:id: |^\\s*)'?'${tbl}'?`).test(admNav) && !new RegExp(`id: '${tbl}'`).test(adm),
     'reserved domain resurfaced');
 }
 

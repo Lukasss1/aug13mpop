@@ -28,7 +28,7 @@ check('every external GitHub Action is pinned to a full commit SHA',
 
 let checkoutSafe = true;
 for (const [name, src] of workflows) {
-  for (const match of src.matchAll(/^(\s*)- uses:\s*actions\/checkout@[0-9a-f]{40}[^\n]*\n([\s\S]*?)(?=^\1- |^\s{0,6}[A-Za-z_-]+:|\z)/gm)) {
+  for (const match of src.matchAll(/^(\s*)- uses:\s*actions\/checkout@[0-9a-f]{40}[^\n]*\n([\s\S]*?)(?=^\1- |^\s{0,6}[A-Za-z_-]+:|(?![\s\S]))/gm)) {
     if (!/persist-credentials:\s*false/.test(match[2])) checkoutSafe = false;
   }
 }
@@ -61,6 +61,13 @@ check('database harnesses cannot silently select an older installed PostgreSQL m
   !/\/usr\/lib\/postgresql\/\*\/bin/.test(activeDbHarnesses)
   && /PGBIN="\/usr\/lib\/postgresql\/17\/bin"/.test(activeDbHarnesses));
 
+check('GitHub CI makes PostgreSQL 17 the default server, not only the default client',
+  /pg_conftool 17 main set port 5432/.test(postgresInstaller)
+  && /show server_version_num/.test(postgresInstaller));
+const denoVersions = [...all.matchAll(/deno-version:\s*(v[0-9.]+)/g)].map((m) => m[1]);
+check('Deno runtime is exact-pinned and consistent across CI and release',
+  denoVersions.length === 2 && denoVersions.every((version) => version === 'v2.9.5'));
+
 check('production workflows share one mutation lock',
   /group:\s*milkpop-production-mutation/.test(workflows.get('release.yml'))
   && /group:\s*milkpop-production-mutation/.test(workflows.get('commission-production-backend.yml')));
@@ -68,7 +75,7 @@ check('staging workflow uses the protected staging mutation lock',
   /group:\s*milkpop-staging-mutation/.test(workflows.get('staging-integration.yml')));
 
 const security = workflows.get('security.yml');
-const securityRegression = security.match(/\n  security-regression:[\s\S]*?(?=\n  [a-zA-Z0-9_-]+:|\s*$)/)?.[0] ?? '';
+const securityRegression = security.match(/\n {2}security-regression:[\s\S]*?(?=\n  [a-zA-Z0-9_-]+:|\s*$)/)?.[0] ?? '';
 check('security-regression installs the locked dependency tree before package executables',
   /run:\s*npm ci/.test(securityRegression)
   && securityRegression.indexOf('npm ci') < securityRegression.indexOf('npm run test:security'));

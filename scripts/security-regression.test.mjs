@@ -390,7 +390,7 @@ const SQL_CREATE_DEMO = /create\s+policy\s+(")?demo_full_access/i;
   const adm = stripComments(read('src/components/AdminPanel.tsx'));
   const salesPanel = stripComments(read('src/components/admin/SalesPanel.tsx'));
   check('deferred POS sales tooling is not routed and has no refund/void mutation buttons',
-    !/<SalesPanel/.test(adm)
+    !/<SalesPanel\b/.test(adm)
     && !/onUpdateOrderStatus|onRefund|onVoid/.test(salesPanel)
     && /Refund — on the till only/.test(salesPanel)
     && /Void — on the till only/.test(salesPanel),

@@ -497,8 +497,8 @@ check('CV access has one server-derived audit owner',
   && !/logAction\(/.test(cvOpenSlice));
 check('irreversible admin actions ask once before the guarded mutation',
   /Delete \$\{shift\.employeeName\}'s shift/.test(admin)
-  && /Sign off \"\$\{document\.name\}\" as reviewed/.test(admin)
-  && /Mark incident \"\$\{report\.title\}\" as resolved/.test(admin));
+  && /Sign off "\$\{document\.name\}" as reviewed/.test(admin)
+  && /Mark incident "\$\{report\.title\}" as resolved/.test(admin));
 
 if (runtimeAvailable) {
   const pay = execute('src/lib/pay.ts', { '../types': {} });

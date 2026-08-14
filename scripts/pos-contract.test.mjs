@@ -69,7 +69,7 @@ check('pos-ingest: verifies the ack partition invariant server-side',
 
 /* 5. pos-pair invariants */
 check('pos-pair: deployed without JWT verification',
-  /Deploy WITHOUT (?:\"|\')?Verify JWT(?:\"|\')?/.test(pair), 'deployment note missing');
+  /Deploy WITHOUT (?:"|')?Verify JWT(?:"|')?/.test(pair), 'deployment note missing');
 check('pos-pair: only the code HASH reaches SQL',
   /sha256hex\(code\)/.test(pair) && /p_code_hash/.test(pair),
   'raw code appears to be sent to SQL');

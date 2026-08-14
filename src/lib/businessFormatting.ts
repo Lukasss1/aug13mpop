@@ -12,6 +12,7 @@ export function normalizeCurrencySymbol(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > 4) return undefined;
+  // eslint-disable-next-line no-control-regex -- rejecting ASCII control bytes is intentional input hardening.
   if (/[\u0000-\u001F\u007F<>]/.test(trimmed)) return undefined;
   return trimmed;
 }

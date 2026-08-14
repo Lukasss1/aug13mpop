@@ -210,7 +210,7 @@ check('live source no longer describes public forms as direct anonymous inserts'
   && !/anon INSERT already exists|anon INSERT remains/.test(publicFormFunction));
 check('public-form function documents the enforced no-direct-table boundary',
   /Anonymous callers have NO direct table privileges/.test(publicFormFunction)
-  && /neither\s*\n?\/\/  INSERT nor SELECT/.test(publicFormFunction));
+  && /neither\s*\n?\/\/ {2}INSERT nor SELECT/.test(publicFormFunction));
 check('public website sync panel covers both crawler and fallback content',
   /opening fallback snapshot match the live public data/.test(read('src/components/admin/SeoSyncPanel.tsx'))
   && /Record SEO refresh/.test(read('src/components/admin/SeoSyncPanel.tsx')));

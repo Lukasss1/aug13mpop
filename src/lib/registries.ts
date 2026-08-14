@@ -159,6 +159,7 @@ export async function authedRest<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- Generic persistence adapters below intentionally bridge heterogeneous persisted row shapes; typed domain callers do not receive raw rows. */
 /* ------------------------------------------------------------------ */
 /*  Row mapping (shared with the pull path so shapes never drift)      */
 /*  OPT-02 Check 4 (Stage C): these helpers serialize/deserialize      */
@@ -701,6 +702,8 @@ export async function applyCollectionChanges<T extends Record<string, any>>(
   }
   return finalRows.map((r) => fromDbRow<T>(r, m));
 }
+
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** Authenticated Postgres RPC call. A successful response confirms the
  *  transaction; a transport failure is an UNKNOWN outcome, so callers must

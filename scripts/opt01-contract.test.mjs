@@ -55,7 +55,7 @@ check('canonical helper maps JWT ON to ordinary deploy and JWT OFF to --no-verif
     `code-owned public inventory count: ${functionCount}`);
   check('deferred POS functions are absent from the public deploy set',
     POS_FUNCTIONS.every(([name]) => !publicNames.includes(name))
-      && POS_FUNCTIONS.every(([name]) => !new RegExp(`functions deploy [\"']?${name}`).test(publicDeploy)));
+      && POS_FUNCTIONS.every(([name]) => !new RegExp(`functions deploy ["']?${name}`).test(publicDeploy)));
 }
 check('launch.sh warns that media-cleanup deploys INERT (flag stays unset)',
   /media-cleanup deploys INERT/.test(launch) && /MEDIA_CLEANUP_ENABLED=true function secret/.test(launch));

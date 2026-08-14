@@ -66,7 +66,7 @@ jobs:
           persist-credentials: false
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
-          deno-version: v2.x
+          deno-version: v2.9.5
       - name: Check every Edge Function and shared module with the runtime-native toolchain
         run: npm run test:deno
 
@@ -186,7 +186,6 @@ jobs:
       - name: Install PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       - name: Install dependencies
         run: npm ci
       # Builds a throwaway database from the authoritative manifest, then checks
@@ -264,7 +263,6 @@ jobs:
       - name: Install and start PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       # The suite drives psql as the postgres OS user (`su postgres`), so it
       # runs under sudo with the runner's node on PATH. Named npm script (spec §7).
       - name: Run the local RLS matrix
@@ -292,7 +290,6 @@ jobs:
       - name: Install and start PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       - name: Install
         run: npm ci
       # Builds three databases: the full chain, a truncated pre-fix chain that
@@ -313,7 +310,6 @@ jobs:
       - name: Install and start PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       - name: Install
         run: npm ci
       # One check block per production-closure requirement (14 sections):
@@ -351,7 +347,6 @@ jobs:
       - name: Install and start PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       - name: Install
         run: npm ci
       # Builds three databases: the fresh chain, an install from the canonical
@@ -401,7 +396,6 @@ jobs:
       - name: Install and start PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       - name: Install
         run: npm ci
       - name: Publication boundary
@@ -452,7 +446,6 @@ jobs:
       - name: Install PostgreSQL
         run: |
           bash scripts/install-postgresql-17.sh
-          sudo service postgresql start
       - name: Prove backup restoration and repeat the concurrency suite five times
         run: sudo env "PATH=$PATH" npm run test:database-durability
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

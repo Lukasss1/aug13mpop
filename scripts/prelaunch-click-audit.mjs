@@ -21,7 +21,7 @@ await page.goto(BASE, { waitUntil: 'networkidle' });
 ok('home renders hero headline', await page.locator('text=Sip').first().isVisible());
 
 /* ---- 1. Top navbar: every tab (stable #nav-<key> ids, labels are owner-editable) ---- */
-const navKeys = ['menu', 'stores', 'careers', 'franchise', 'about', 'contact'];
+const navKeys = ['menu', 'stores', 'about', 'contact'];
 for (const key of navKeys) {
   await page.locator(`#nav-${key}`).click();
   await page.waitForTimeout(450);
@@ -55,46 +55,40 @@ ok('menu fails closed with no database (no seed products to search)',
 const search = page.locator('input[placeholder*="earch"]').first();
 if (await search.count()) { await search.fill(''); }
 
-/* ---- 3. Careers: honest no-open-roles empty state + home mascot ---- */
-await page.locator('#nav-careers').click();
-await page.waitForTimeout(500);
-const careersBody = (await page.textContent('body')) || '';
-/* SMALL-BIZ CLOSURE P0-7 repoint (see scripts/routing-smoke.test.mjs step 4 for
-   the full reasoning). This audit runs against a build with NO backend, so
-   every public collection is UNAVAILABLE. "No Open Roles" / "no news yet" /
-   "Coming Soon" are claims about the BUSINESS and may render only when the
-   collection genuinely loaded and was empty; an outage now says so instead.
-   Asserting the outage state AND the absence of the false claim is strictly
-   stronger than the original assertion. */
-ok('careers shows the OUTAGE state, not a false no-open-roles claim',
-  /temporarily unavailable/i.test(careersBody) && !/no open roles/i.test(careersBody)
-  && !/Hospitality Team Member|Shift Supervisor/.test(careersBody),
-  careersBody.trim().slice(0, 60));
-
-/* home careers card mascot (the chocolate-bite fix) */
+/* ---- 3. Optional programmes fail closed until the owner publishes them ---- */
 await page.locator('#brand-logo-btn').click();
 await page.waitForTimeout(600);
-const mascot = page.locator('img[src*="mascot_hold_shake"]').first();
-if (await mascot.count()) {
-  const box = await mascot.boundingBox();
-  const card = await mascot.evaluateHandle((el) => el.closest('div'));
-  const cbox = await card.asElement().boundingBox();
-  const fullyInside = box && cbox && box.x >= cbox.x - 1 && box.x + box.width <= cbox.x + cbox.width + 1
-    && box.y + box.height <= cbox.y + cbox.height + 1;
-  ok('careers-card mascot fully visible (not cropped)', !!fullyInside,
-    box && cbox ? `img right=${Math.round(box.x + box.width)} card right=${Math.round(cbox.x + cbox.width)}` : 'no box');
-} else ok('careers-card mascot present', false);
+for (const key of ['careers', 'franchise', 'news']) {
+  ok(`disabled ${key} is absent from the top navigation`, await page.locator(`#nav-${key}`).count() === 0);
+}
+ok('disabled Careers promotion is absent from the homepage',
+  await page.locator('a[href="/careers/"], button:has-text("Careers"), a:has-text("Join the Team")').count() === 0);
+await page.goto(BASE + '/careers/', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+const careersBody = (await page.textContent('body')) || '';
+ok('disabled careers route fails closed instead of claiming an empty recruitment programme',
+  /couldn.t find that page|404/i.test(careersBody)
+  && !/no open roles|Hospitality Team Member|Shift Supervisor/i.test(careersBody),
+  careersBody.trim().slice(0, 60));
+ok('disabled careers route is noindex',
+  /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
 
-/* ---- 4. Footer: every link ---- */
-const footerLinks = ['The Drink & Dessert Menu', 'Our Store Locations', 'Careers & Job Vacancies',
-  'Franchise Opportunities', 'Our Story & Mission', 'Contact Customer Care', 'Company News & Press',
-  'Privacy Policy', 'UK GDPR Consent Policy', 'Franchise Disclosure (FDD)'];
+/* ---- 4. Footer: every published link; optional programmes stay absent ---- */
+await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+const footerLinks = ['The Drink & Dessert Menu', 'Our Store Locations',
+  'Our Story & Mission', 'Contact Customer Care', 'Privacy Policy', 'UK GDPR Consent Policy'];
 for (const label of footerLinks) {
   const el = page.locator(`footer >> text="${label}"`).first();
   if (!(await el.count())) { ok(`footer → ${label} exists`, false); continue; }
   await el.click(); await page.waitForTimeout(400);
   const h1 = (await page.locator('h1').first().textContent().catch(() => '')) || '';
   ok(`footer → ${label} opens a page`, h1.trim().length > 0, h1.trim().slice(0, 40));
+}
+for (const label of ['Careers & Job Vacancies', 'Franchise Opportunities', 'Company News & Press', 'Franchise Disclosure (FDD)']) {
+  await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+  await page.waitForTimeout(150);
+  ok(`footer omits disabled optional link: ${label}`, await page.locator(`footer >> text="${label}"`).count() === 0);
 }
 /* dead social icons must be hidden with blank defaults */
 const socialCount = await page.locator('footer a[aria-label="Facebook"], footer a[aria-label="Twitter / X"]').count();

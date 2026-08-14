@@ -36,7 +36,7 @@ check('known incident baseline remains 31 tables / 5 views / 2 helpers / 8 enums
 
 const expectedArray = (varName) => {
   const re = new RegExp(`${varName}\\s+constant\\s+text\\[\\]\\s*:=\\s*array\\[([\\s\\S]*?)\\]::text\\[\\]`, 'i');
-  const block = (recovery.match(re) || [,''])[1];
+  const block = (recovery.match(re) || ['',''])[1];
   return uniq([...block.matchAll(/'([a-zA-Z0-9_]+)'/g)].map((m) => m[1]));
 };
 check('recovery requires exact table fingerprint, not merely an allow-list',
@@ -57,7 +57,7 @@ check('recovery drops exactly the baseline view set', droppedViews.join(',') ===
 check('recovery drops exactly the baseline helper set', droppedFunctions.join(',') === schemaFunctions.join(','));
 check('recovery drops exactly the baseline enum set', droppedTypes.join(',') === schemaTypes.join(','));
 
-const rowGuardBlock = (recovery.match(/foreach\s+tbl\s+in\s+array\s+array\[([\s\S]*?)\]\s+loop/i) || [,''])[1];
+const rowGuardBlock = (recovery.match(/foreach\s+tbl\s+in\s+array\s+array\[([\s\S]*?)\]\s+loop/i) || ['',''])[1];
 const guardedTables = uniq([...rowGuardBlock.matchAll(/'([a-zA-Z0-9_]+)'/g)].map((m) => m[1]));
 check('every baseline table except site_settings must still be empty',
   guardedTables.join(',') === schemaTables.filter((t) => t !== 'site_settings').join(','));

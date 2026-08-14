@@ -12,7 +12,7 @@ const checks=[
  ['hardening preserves failed heartbeat without rethrow',/record_heartbeat\('retention-sweep', 'failed'[\s\S]*return jsonb_build_object\([\s\S]*'ok', false/.test(hardening) && !/record_heartbeat\('retention-sweep', 'failed'[\s\S]*raise;/.test(hardening)],
  ['employment sweep records success and failure',/record_heartbeat\([\s\S]*'employment-sweep'[\s\S]*'ok'/.test(hardening) && /record_heartbeat\('employment-sweep', 'failed'/.test(hardening)],
  ['browser roles remain revoked',/revoke all on function public\.run_retention_sweep[\s\S]*authenticated/.test(hardening) && /revoke all on function public\.employment_sweep_due[\s\S]*authenticated/.test(hardening)],
- ['usability migration follows scheduler hardening in ordered ledger',manifest.includes('\"supabase/migration_t1336_scheduler_failure_heartbeats.sql\"\n  \"supabase/migration_t1337_small_business_usability.sql\"')],
+ ['usability migration follows scheduler hardening in ordered ledger',manifest.includes('"supabase/migration_t1336_scheduler_failure_heartbeats.sql"\n  "supabase/migration_t1337_small_business_usability.sql"')],
  ['commissioner creates all four exact jobs',/cron\.schedule\([\s\S]*'outbox-dispatch'[\s\S]*'employment-sweep'[\s\S]*'retention-sweep'[\s\S]*'ops-health-watch'/.test(commissioner)],
  ['commissioner stores worker secrets in Vault',/vault\.create_secret/.test(commissioner) && /vault\.decrypted_secrets/.test(commissioner)],
  ['deployed probe requires all four active jobs',/employment-sweep,ops-health-watch,outbox-dispatch,retention-sweep/.test(probe)],

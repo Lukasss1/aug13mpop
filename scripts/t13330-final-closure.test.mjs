@@ -64,8 +64,8 @@ check('first production release requires a directly reachable exact HTTPS 404 ma
     && /response\.status === 404/.test(floor)
     && /redirect: 'error'/.test(floor));
 check('production release has one human initiation path only',
-  /on:\n  workflow_dispatch:/.test(release)
-    && !/\n  push:\n/.test(release)
+  /on:\n {2}workflow_dispatch:/.test(release)
+    && !/\n {2}push:\n/.test(release)
     && !/if \[ -z "\$N" \]; then N=/.test(release));
 check('production release runs the complete canonical verify chain before any deployment mutation',
   /Run the complete locked source verification for this exact release commit[\s\S]*npm run verify/.test(release)

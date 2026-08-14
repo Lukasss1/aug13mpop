@@ -44,7 +44,7 @@ check('TypeScript test runners use the locked local tsx binary',
   !/npx[^\n]*tsx/.test(scriptText) && /\btsx scripts\//.test(scriptText));
 const t133Operational = read('scripts/t133-operational.test.mjs');
 check('T13.3 operational test uses the project-local TypeScript dependency',
-  /from ['\"]typescript['\"]/.test(t133Operational)
+  /from ['"]typescript['"]/.test(t133Operational)
   && !t133Operational.includes('/opt/nvm/'));
 check('browser setup uses the locked local Playwright binary',
   pkg.scripts?.['test:browser']?.startsWith('playwright install --with-deps chromium'));

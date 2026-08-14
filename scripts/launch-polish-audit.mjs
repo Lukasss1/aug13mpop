@@ -21,8 +21,8 @@
 import { chromium } from 'playwright';
 
 const BASE = process.env.MP_BASE || 'http://127.0.0.1:4173';
-const PAGES = ['/', '/menu/', '/stores/', '/about/', '/news/', '/careers/', '/franchise/',
-  '/contact/', '/privacy/', '/gdpr/', '/fdd/'];
+const PAGES = ['/', '/menu/', '/stores/', '/about/', '/contact/', '/privacy/', '/gdpr/'];
+const DISABLED_OPTIONAL = ['/careers/', '/franchise/', '/news/', '/fdd/'];
 
 let passed = 0, failed = 0;
 const failures = [];
@@ -74,6 +74,15 @@ for (const route of PAGES) {
   ok(`${route} exposes a main landmark`, info.main);
 }
 
+console.log('\n  Publication switches: disabled optional programmes fail closed');
+for (const route of DISABLED_OPTIONAL) {
+  await page.goto(BASE + route, { waitUntil: 'networkidle' });
+  const body = (await page.textContent('body')) || '';
+  ok(`${route} renders the not-published view`, /couldn.t find that page|404/i.test(body), body.trim().slice(0, 50));
+  ok(`${route} is noindex while unpublished`,
+    /noindex/i.test(await page.getAttribute('meta[name="robots"]', 'content') || ''));
+}
+
 /* ---------------------------------------------------------------- */
 console.log('\n\u00a72  Images carry alt text (decorative images use alt="")');
 for (const route of PAGES) {
@@ -87,7 +96,7 @@ for (const route of PAGES) {
 
 /* ---------------------------------------------------------------- */
 console.log('\n\u00a73  Every control has an accessible name');
-for (const route of ['/contact/', '/careers/', '/franchise/', '/menu/', '/stores/']) {
+for (const route of ['/contact/', '/menu/', '/stores/']) {
   await page.goto(BASE + route, { waitUntil: 'networkidle' });
   const unnamed = await page.evaluate(() => {
     const named = (el) => {
@@ -319,7 +328,7 @@ console.log('\n\u00a78  Reduced motion is respected (WCAG 2.3.3)');
 
 /* ---------------------------------------------------------------- */
 console.log('\n\u00a79  Detail routes carry their own title and description');
-for (const route of ['/news/', '/stores/']) {
+for (const route of ['/stores/']) {
   await page.goto(BASE + route, { waitUntil: 'networkidle' });
   const meta = await page.evaluate(() => ({
     title: (document.title || '').trim(),
